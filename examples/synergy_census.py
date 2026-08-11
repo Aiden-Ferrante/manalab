@@ -14,65 +14,10 @@ no curation, no decklist mining — and the frame earns its place.
 
 from __future__ import annotations
 
-import re
 from collections import defaultdict
 
-from manalab.cards.effects import parse_card
 from manalab.cards.store import CardStore
-
-GRAVE_KEYWORDS = {"flashback", "escape", "unearth", "embalm", "eternalize",
-                  "scavenge", "delve", "disturb", "jump-start", "aftermath"}
-_DIES = re.compile(r"\bdies\b|put into a graveyard from the battlefield", re.I)
-_GAINS_LIFE = re.compile(r"\bgains? life\b|\byou gain life\b", re.I)
-_COUNTER_ON = re.compile(r"counters? (?:is|are) put on|put a [^ ]+ counter", re.I)
-_OWN_SAC = re.compile(r"^(a|an|another|any number of)? ?(creature|permanent|artifact|token)s?\b", re.I)
-
-
-def ports_of(card, parsed) -> dict[str, set[str]]:
-    """port name → roles ('provides' / 'requires'), with outlet tagging."""
-    out: dict[str, set[str]] = defaultdict(set)
-    kw = {k.lower() for k in card.keywords}
-
-    for ability in parsed.abilities:
-        if "sacrifice" in ability.cost.lower():
-            out["bodies"].add("requires")          # a repeatable outlet
-            out["death_events"].add("provides")
-        if ability.trigger:
-            if _DIES.search(ability.trigger):
-                out["death_events"].add("requires")
-            if _GAINS_LIFE.search(ability.trigger):
-                out["life_events"].add("requires")
-            if _COUNTER_ON.search(ability.trigger):
-                out["counters"].add("requires")
-
-    for effect in parsed.effects:
-        params = dict(effect.params)
-        if effect.verb == "create_token":
-            out["bodies"].add("provides")
-        elif effect.verb == "sacrifice":
-            what = str(params.get("what", ""))
-            if _OWN_SAC.match(what.strip()):
-                out["bodies"].add("requires")
-                out["death_events"].add("provides")
-        elif effect.verb == "put_counters" and "+1/+1" in str(params.get("kind", "")):
-            out["counters"].add("provides")
-        elif effect.verb == "proliferate":
-            out["counters"].add("requires")
-        elif effect.verb in ("mill", "discard"):
-            out["graveyard"].add("provides")
-        elif effect.verb == "return_from_graveyard":
-            out["graveyard"].add("requires")
-        elif effect.verb == "gain_life":
-            out["life_events"].add("provides")
-        elif effect.verb == "add_mana" and not card.is_land:
-            out["mana"].add("provides")
-
-    if kw & GRAVE_KEYWORDS:
-        out["graveyard"].add("requires")
-    if card.cost.cmc >= 6:
-        out["mana"].add("requires")
-    return out
-
+from manalab.search.ports import ports_of
 
 def main() -> int:
     store = CardStore()
@@ -80,11 +25,9 @@ def main() -> int:
     parsed_cards = 0
 
     for card in store.all_cards():
-        parsed = parse_card(card)
-        if not parsed.effects and not any(a.trigger or a.cost for a in parsed.abilities):
-            continue
+        card_ports = ports_of(card)
         parsed_cards += 1
-        for port, roles in ports_of(card, parsed).items():
+        for port, roles in card_ports.items():
             for role in roles:
                 sides[(port, role)].append(card.name)
 

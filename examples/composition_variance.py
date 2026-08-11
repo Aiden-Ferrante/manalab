@@ -33,7 +33,8 @@ from collections import Counter
 from manalab.cards.model import Decklist
 from manalab.cards.store import CardStore
 from manalab.evaluate.consistency import ConsistencyEvaluator
-from manalab.search.objective import THROUGHPUT as OBJECTIVE
+from manalab.search.ports import SynergyEvaluator
+from manalab.search.objective import THROUGHPUT_SYNERGY as OBJECTIVE
 
 K_COMPOSITIONS = 48
 M_IDENTITIES = 6
@@ -135,7 +136,7 @@ def main() -> int:
 
     names = sorted({n for _, d in decks for n in d.counts})
     cards = store.resolve(names)
-    evaluator = ConsistencyEvaluator(cards=cards)
+    evaluator = SynergyEvaluator(inner=ConsistencyEvaluator(cards=cards), cards=cards)
 
     scores: dict[int, list[float]] = {}
     flat: list[tuple[int, int, float]] = []

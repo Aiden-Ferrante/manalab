@@ -87,6 +87,18 @@ an overcosted blank counts the same as a bomb. That is the *next* objective's
 problem — this one exists so composition search stops being able to win by
 cutting spells.
 """
+
+THROUGHPUT_SYNERGY = LinearObjective(
+    {"mana_spent": 1.0, "synergy": 0.5}, name="throughput+synergy@0.5")
+"""The next rung: spell quality starts to differ from spell cost.
+
+`synergy` is the injected port-bottleneck score (see search.ports) — closable
+provider/consumer pairs across the deck, supermodular where combos live. The
+0.5 is a declared assumption, not a measurement: it prices one closable pair at
+half a mana of throughput per game, pending calibration by an evaluator that
+can actually see synergy resolve. Requires the evaluator stack to include
+SynergyEvaluator, or the term reads 0 and this collapses to THROUGHPUT.
+"""
 """Default working objective. Deliberately narrow and deliberately not "win rate".
 
 Known to be gameable on its own — see the degenerate-deck problem in Phase 5 of

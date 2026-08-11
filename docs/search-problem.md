@@ -147,6 +147,27 @@ climb (21.88 vs 20.99) — first-improvement hill climbing stalls short, and
 throughput's own gameability is already visible: mana spent ≈ cmc, so it
 overvalues expensive spells. The objective ladder continues.
 
+**Third run — 2026-08-11, Standard pool, throughput+synergy@0.5**
+(the port-bottleneck score injected as a metric; λ = 0.5 mana per closable
+pair, a declared prior pending engine calibration):
+
+```
+σ² composition   1.292        composition share  46.4%
+σ² identity      1.493        noise floor        0.040
+```
+
+The ladder's full arc, one mechanism, three measurements:
+
+    consistency_t4        86.6%  composition
+    throughput            67.7%
+    throughput+synergy    46.4%   ← identity now carries the majority
+
+**The hypergraph column is load-bearing as of this rung** — not by preference,
+by three monotone measurements. The paired search run beat every hand-picked
+composition this time (23.46 vs 23.21 for the top-heavy that won last rung),
+with lands interior at 25 — the searcher recovers as the objective's gameable
+edges close.
+
 **Verdict: composition-dominant — for this objective.** The caveat is the
 finding's edge, not a footnote: `consistency_t4` is a curve metric, and curve
 metrics respond to composition *by construction*. What this run proves is that
