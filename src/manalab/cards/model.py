@@ -5,9 +5,11 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass, field
+from functools import cached_property
 from typing import Iterable, Mapping, Sequence
 
 from manalab.cards.mana import ManaCost, parse_cost, parse_produced
+from manalab.cards.types import TypeLine, parse_type_line
 
 
 @dataclass(frozen=True)
@@ -46,6 +48,16 @@ class Face:
     power: str = ""
     toughness: str = ""
     loyalty: str = ""
+
+    @cached_property
+    def types(self) -> TypeLine:
+        """Supertypes, card types and subtypes, split from `type_line`.
+
+        Per face because the halves differ: `Brazen Borrower` is a Creature on face
+        0 and an Instant — Adventure on face 1, and the joined top-level line says
+        both at once, which is true of the card and of neither side.
+        """
+        return parse_type_line(self.type_line)
 
 
 FACED_LAYOUTS = frozenset({
