@@ -340,6 +340,8 @@ class Coverage:
     cards: int = 0
     fully_parsed: int = 0
     vanilla: int = 0
+    unread: int = 0
+    """Cards whose text lives on faces we do not load. Not vanilla — unread."""
     clauses: int = 0
     matched: int = 0
     verb_counts: dict[str, int] = field(default_factory=dict)
@@ -348,6 +350,11 @@ class Coverage:
     @property
     def card_rate(self) -> float:
         return self.fully_parsed / self.cards if self.cards else 0.0
+
+    @property
+    def readable(self) -> int:
+        """Cards whose text we can actually see. The honest denominator."""
+        return self.cards - self.unread
 
     @property
     def clause_rate(self) -> float:
@@ -370,6 +377,16 @@ def measure(cards: Sequence[Card]) -> Coverage:
     for card in cards:
         parsed = parse_card(card)
         report.cards += 1
+
+        # A card with no clauses cannot fail one, so `fully_parsed` is True for
+        # anything textless — correct for a vanilla bear, and a lie for a card whose
+        # text is sitting in `card_faces` we never read. Counting those as wins put
+        # 886 cards in the success column that the parser has never seen a word of,
+        # and inflated the headline from 60.9% to 63.4%.
+        if card.has_faces and not card.oracle_text.strip():
+            report.unread += 1
+            continue
+
         if not card.oracle_text.strip():
             report.vanilla += 1
         if parsed.fully_parsed:

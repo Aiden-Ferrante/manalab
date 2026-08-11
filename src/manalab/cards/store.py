@@ -20,7 +20,7 @@ DEFAULT_DB = Path("data/cards.duckdb")
 # oracle export has ~80 fields; pulling them all makes the store 10x bigger for
 # artist names and border colors.
 _COLUMNS = """
-    oracle_id, name, mana_cost, cmc, type_line, oracle_text,
+    oracle_id, name, mana_cost, cmc, type_line, oracle_text, layout,
     colors, color_identity, produced_mana, legalities, rarity, set_name,
     power, toughness, loyalty, keywords
 """

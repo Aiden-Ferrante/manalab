@@ -31,8 +31,15 @@ def main() -> None:
     report = effects.measure(cards)
 
     print(f"corpus            {report.cards:,} cards")
-    print(f"  no oracle text  {report.vanilla:,}")
-    print(f"  fully parsed    {report.fully_parsed:,}  ({report.card_rate:.1%})")
+    if report.unread:
+        # Named rather than quietly dropped: these are cards with real abilities
+        # whose text lives on faces the loader does not read yet. Counting them as
+        # successes — which is what "nothing failed to parse" did — put 886 cards
+        # in the win column that the parser has never seen a word of.
+        print(f"  text unread     {report.unread:,}  (faces not loaded)")
+    print(f"  vanilla         {report.vanilla:,}  (no text to parse)")
+    print(f"  fully parsed    {report.fully_parsed:,}  ({report.card_rate:.1%} of all"
+          f" · {report.fully_parsed / report.readable:.1%} of readable)")
     print(f"  clauses matched {report.matched:,}/{report.clauses:,}  ({report.clause_rate:.1%})")
 
     print(f"\n{'verb':<24}{'occurrences':>12}")

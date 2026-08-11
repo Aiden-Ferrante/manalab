@@ -28,6 +28,15 @@ class Effect:
         return dict(self.params).get(key, default)
 
 
+FACED_LAYOUTS = frozenset({
+    "transform", "adventure", "split", "modal_dfc", "flip", "prepare",
+    "double_faced_token", "meld", "battle_class", "reversible_card",
+})
+"""Layouts whose text lives in `card_faces`. Measured over the 35,139 loaded cards:
+transform 401, adventure 170, split 137, modal_dfc 100, prepare 55, flip 21 — every
+one of them arrives with a blank top-level `oracle_text`."""
+
+
 @dataclass(frozen=True)
 class Card:
     """A card's printed characteristics. Never its state in a game.
@@ -42,6 +51,10 @@ class Card:
     name: str
     cost: ManaCost
     type_line: str
+    layout: str = "normal"
+    """Scryfall's layout. `normal` has one face; `transform`, `adventure`, `split`,
+    `modal_dfc`, `flip` and `prepare` keep their text in `card_faces`, which is why
+    a blank `oracle_text` on those means *unread*, not *vanilla*."""
     produces: frozenset[str] = frozenset()
     """Colors of mana this card can add. Empty for non-producers."""
     taps_for_mana: bool = False
@@ -56,6 +69,11 @@ class Card:
     keywords: frozenset[str] = frozenset()
     colors: frozenset[str] = frozenset()
     color_identity: frozenset[str] = frozenset()
+
+    @property
+    def has_faces(self) -> bool:
+        """Whether this card's text lives on faces rather than at the top level."""
+        return self.layout in FACED_LAYOUTS
 
     @property
     def is_land(self) -> bool:
@@ -165,6 +183,7 @@ def card_from_scryfall(row: Mapping[str, object]) -> Card:
         name=str(row.get("name")),
         cost=parse_cost(row.get("mana_cost")),  # type: ignore[arg-type]
         type_line=type_line,
+        layout=str(row.get("layout") or "normal"),
         produces=produces,
         taps_for_mana=taps_for_mana,
         enters_tapped=enters_tapped,

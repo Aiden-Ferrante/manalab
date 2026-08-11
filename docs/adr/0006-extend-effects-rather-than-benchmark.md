@@ -68,12 +68,23 @@ a coverage target, is what the next cycles pull from.
 **Coverage will get worse before it gets better, and that is correct.** The
 database is missing text it should have:
 
-- All 886 null-text cards in the loaded table are two-part names — every split,
-  DFC, adventure and flip card. 100% of the nulls, one cause.
-- The loaded table holds 35,139 rows against 38,623 in the cached bulk file:
-  3,484 cards have never been loaded.
-- The current bulk file contains 3,212 cards whose text lives in `card_faces`,
-  against 887 two-part names in the table today.
+- All 886 null-text cards in the loaded table carry `card_faces` — every
+  transform, adventure, split, modal DFC, flip and prepare card. 100% of the
+  nulls, one cause:
+
+  ```
+  transform 401 · adventure 170 · split 137 · modal_dfc 100 · prepare 55 · flip 21
+  ```
+
+- The 3,484-row difference between the file (38,623) and the table (35,139) is
+  **not** a gap: `store.build` excludes 2,676 art-series and 808 token entries on
+  purpose, and every playable card loads. Verified against the raw file — no card
+  has a null `type_line`.
+- A separate 350 cards are genuinely vanilla: loaded, and with no text to parse.
+
+*(Corrected 2026-08-11. An earlier draft of this ADR said 3,212 cards hide text in
+`card_faces`. That figure was counted over the whole bulk file including the tokens
+and art series the loader drops, and overstated the real gap by 3.6×.)*
 
 Fixing the schema will hand `effects.py` thousands of cards of text it has never
 seen. The 63.4% figure will drop. **Anyone treating it as a baseline to beat will
