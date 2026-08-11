@@ -1,0 +1,17 @@
+// Modern Burn — a real 60-card list, useful because its curve is low and
+// its mana base is nearly monocolored, so sim results are easy to sanity-check.
+4 Goblin Guide
+4 Monastery Swiftspear
+4 Eidolon of the Great Revel
+4 Lightning Bolt
+4 Lava Spike
+4 Rift Bolt
+4 Skewer the Critics
+4 Boros Charm
+4 Lightning Helix
+3 Searing Blaze
+4 Inspiring Vantage
+4 Sacred Foundry
+2 Arid Mesa
+9 Mountain
+2 Sunbaked Canyon

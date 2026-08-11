@@ -1,0 +1,10 @@
+# Imported by shipyard.
+id: manalab
+name: manalab
+stage: spike
+description: "Magic: the Gathering rules engine and card database, built as a research instrument for testing strategy theories by simulation."
+links:
+  readme: README.md
+  architecture: ARCHITECTURE.md
+  adr: docs/adr/
+tags: [magic, simulation, rules-engine, research, keyless]

@@ -1,0 +1,12 @@
+# Card data is a build artifact: rebuildable via `manalab fetch && manalab build`.
+# Ignore the whole directory rather than listing extensions — Scryfall has
+# already changed format once (.json -> .jsonl.gz) and a missed pattern means a
+# 25 MB blob silently lands in git.
+data/*
+!data/.gitkeep
+
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.egg-info/
