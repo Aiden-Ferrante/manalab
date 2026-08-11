@@ -107,6 +107,21 @@ class Card:
     faces has to branch on layout."""
 
     @property
+    def card_types(self) -> frozenset[str]:
+        """Every card type on any face — the grouping key for optimization.
+
+        Union on purpose: a deckbuilder counting creatures should count Brazen
+        Borrower, and one counting instants should count it too. Falls back to
+        parsing the joined type_line for cards built without faces.
+        """
+        if self.faces:
+            return frozenset(t for f in self.faces for t in f.types.card_types)
+        return frozenset(parse_type_line(self.type_line).card_types)
+
+    def is_type(self, card_type: str) -> bool:
+        return card_type.lower() in self.card_types
+
+    @property
     def has_faces(self) -> bool:
         """Whether this card's text lives on faces rather than at the top level."""
         return self.layout in FACED_LAYOUTS

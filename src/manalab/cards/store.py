@@ -60,6 +60,7 @@ def build(json_path: Path, db_path: Path = DEFAULT_DB) -> int:
         )
         con.execute("CREATE INDEX idx_cards_name ON cards(name)")
         _build_faces(con, json_path)
+        _build_face_types(con)
         (count,) = con.execute("SELECT count(*) FROM cards").fetchone()
         return int(count)
     finally:
@@ -107,6 +108,36 @@ def _build_faces(con: duckdb.DuckDBPyConnection, json_path: Path) -> None:
     con.execute("DROP TABLE IF EXISTS faces")
     con.execute(_FACE_SQL, [str(json_path)])
     con.execute("CREATE INDEX idx_faces_oracle ON faces(oracle_id)")
+
+def _build_face_types(con: duckdb.DuckDBPyConnection) -> None:
+    """Classify every face's type line into queryable list columns.
+
+    Optimization groups decks by what cards *are* — creatures, lands, instants —
+    and a classification that lives only in Python properties cannot be grouped
+    by in SQL. One row per face: supertypes, card_types, subtypes and the words
+    we refused to guess at, plus is_permanent since "does it stay on the
+    battlefield" is the grouping the evaluator asks for most.
+    """
+    from manalab.cards.types import parse_type_line
+
+    con.execute("DROP TABLE IF EXISTS face_types")
+    con.execute("""
+        CREATE TABLE face_types (
+            oracle_id  VARCHAR, face_index INTEGER,
+            supertypes VARCHAR[], card_types VARCHAR[],
+            subtypes   VARCHAR[], unknown VARCHAR[],
+            is_permanent BOOLEAN)""")
+    rows = con.execute(
+        "SELECT oracle_id, face_index, type_line FROM faces").fetchall()
+    parsed = []
+    for oid, idx, line in rows:
+        t = parse_type_line(str(line or ""))
+        parsed.append((str(oid), int(idx), list(t.supertypes), list(t.card_types),
+                       list(t.subtypes), list(t.unknown), t.is_permanent))
+    con.executemany(
+        "INSERT INTO face_types VALUES (?, ?, ?, ?, ?, ?, ?)", parsed)
+    con.execute("CREATE INDEX idx_face_types ON face_types(oracle_id)")
+
 
 class CardStore:
     """Read-only view over the built database.

@@ -118,3 +118,59 @@ def test_each_face_carries_its_own_types():
     back = Face(index=1, name="Petty Theft", type_line="Instant — Adventure")
     assert front.types.card_types == ("creature",) and front.types.is_permanent
     assert back.types.card_types == ("instant",) and not back.types.is_permanent
+
+
+def test_a_card_groups_under_every_type_it_has():
+    """Union across faces: a deckbuilder counting creatures counts Brazen
+    Borrower, and one counting instants counts it too."""
+    from manalab.cards.model import Card, Face, ManaCost
+    card = Card(oracle_id="bb", name="Brazen Borrower // Petty Theft",
+                cost=ManaCost(), type_line="Creature // Instant — Adventure",
+                faces=(Face(index=0, name="Brazen Borrower",
+                            type_line="Creature — Faerie Rogue"),
+                       Face(index=1, name="Petty Theft",
+                            type_line="Instant — Adventure")))
+    assert card.card_types == {"creature", "instant"}
+    assert card.is_type("Creature") and card.is_type("instant")
+    assert not card.is_type("land")
+
+
+def test_face_types_lands_in_the_database(tmp_path):
+    """The classification must be one GROUP BY away, not a Python property —
+    optimization queries the lake, and a property cannot be grouped by in SQL."""
+    import gzip, json
+    import duckdb
+    from manalab.cards import store
+    from tests.test_card_faces import DEFAULTS, FACE_DEFAULTS
+
+    def rec(d):
+        d = {**DEFAULTS, **d}
+        if d.get("card_faces"):
+            d["card_faces"] = [{**FACE_DEFAULTS, **x} for x in d["card_faces"]]
+        return json.dumps(d)
+
+    src = tmp_path / "c.jsonl.gz"
+    with gzip.open(src, "wt") as fh:
+        fh.write(rec({"oracle_id": "w", "name": "Wrath", "layout": "normal",
+                      "type_line": "Sorcery", "oracle_text": "Destroy all creatures."}) + "\n")
+        fh.write(rec({"oracle_id": "bb", "name": "A // B", "layout": "adventure",
+                      "type_line": "Creature — Faerie // Instant — Adventure",
+                      "card_faces": [
+                          {"name": "A", "type_line": "Creature — Faerie",
+                           "oracle_text": "Flying"},
+                          {"name": "B", "type_line": "Instant — Adventure",
+                           "oracle_text": "Draw a card."}]}) + "\n")
+    db = tmp_path / "c.duckdb"
+    store.build(src, db)
+    con = duckdb.connect(str(db), read_only=True)
+    try:
+        groups = dict(con.execute(
+            "SELECT u.t, count(*) FROM face_types, unnest(card_types) AS u(t) "
+            "GROUP BY 1").fetchall())
+        assert groups == {"sorcery": 1, "creature": 1, "instant": 1}
+        perm = dict(con.execute(
+            "SELECT f.name, ft.is_permanent FROM face_types ft "
+            "JOIN faces f USING (oracle_id, face_index)").fetchall())
+        assert perm == {"Wrath": False, "A": True, "B": False}
+    finally:
+        con.close()
