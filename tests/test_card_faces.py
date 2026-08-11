@@ -188,3 +188,36 @@ def test_rebuilding_is_idempotent(tmp_path):
 
     first = counts()
     assert counts() == first, "a second load must not duplicate or drop rows"
+
+
+def test_tags_are_optional_and_exploded(tmp_path):
+    """oracle_tags is a second bulk file, present or not. Absent: the build still
+    succeeds and the tables are simply empty-handed. Present: one record per tag
+    explodes into (oracle_id, tag) rows, one GROUP BY away like face_types."""
+    src = tmp_path / "cards.jsonl.gz"
+    with gzip.open(src, "wt") as fh:
+        fh.write(record(SINGLE) + "\n")
+    db = tmp_path / "cards.duckdb"
+    store.build(src, db)                      # no tags file beside it
+    con = duckdb.connect(str(db), read_only=True)
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        assert "card_tags" not in tables, "no file, no table — not an empty lie"
+    finally:
+        con.close()
+
+    tags = tmp_path / "oracle_tags.jsonl.gz"
+    with gzip.open(tags, "wt") as fh:
+        fh.write(json.dumps({
+            "object": "tag", "slug": "removal", "label": "Removal",
+            "description": "Gets rid of things.", "parent_ids": [],
+            "taggings": [{"oracle_id": "bolt", "weight": "median"}],
+        }) + "\n")
+    store.build(src, db)
+    con = duckdb.connect(str(db), read_only=True)
+    try:
+        rows = con.execute("SELECT oracle_id, tag FROM card_tags").fetchall()
+        assert rows == [("bolt", "removal")]
+        assert con.execute("SELECT card_count FROM tags").fetchone()[0] == 1
+    finally:
+        con.close()

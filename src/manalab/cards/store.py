@@ -61,6 +61,7 @@ def build(json_path: Path, db_path: Path = DEFAULT_DB) -> int:
         con.execute("CREATE INDEX idx_cards_name ON cards(name)")
         _build_faces(con, json_path)
         _build_face_types(con)
+        _build_tags(con, json_path.parent / "oracle_tags.jsonl.gz")
         (count,) = con.execute("SELECT count(*) FROM cards").fetchone()
         return int(count)
     finally:
@@ -80,26 +81,30 @@ def build(json_path: Path, db_path: Path = DEFAULT_DB) -> int:
 _FACE_SQL = """
 CREATE TABLE faces AS
 WITH src AS (
-    SELECT * FROM read_json_auto(?, format = 'newline_delimited',
-                                 maximum_object_size = 64000000, ignore_errors = false)
+    SELECT *, CAST(card_faces AS STRUCT(
+                name VARCHAR, mana_cost VARCHAR, type_line VARCHAR,
+                oracle_text VARCHAR, power VARCHAR, toughness VARCHAR,
+                loyalty VARCHAR)[]) AS cf
+    FROM read_json_auto(?, format = 'newline_delimited',
+                        maximum_object_size = 64000000, ignore_errors = false)
     WHERE type_line IS NOT NULL
       AND type_line NOT LIKE 'Token%'
       AND type_line NOT LIKE 'Card%'
 )
-SELECT CAST(oracle_id AS VARCHAR)          AS oracle_id,
-       unnest(range(0, len(card_faces)))   AS face_index,
-       unnest(card_faces).name             AS name,
-       unnest(card_faces).mana_cost        AS mana_cost,
-       unnest(card_faces).type_line        AS type_line,
-       unnest(card_faces).oracle_text      AS oracle_text,
-       unnest(card_faces).power            AS power,
-       unnest(card_faces).toughness        AS toughness,
-       unnest(card_faces).loyalty          AS loyalty
-FROM src WHERE card_faces IS NOT NULL
+SELECT CAST(oracle_id AS VARCHAR)  AS oracle_id,
+       unnest(range(0, len(cf)))   AS face_index,
+       unnest(cf).name             AS name,
+       unnest(cf).mana_cost        AS mana_cost,
+       unnest(cf).type_line        AS type_line,
+       unnest(cf).oracle_text      AS oracle_text,
+       unnest(cf).power            AS power,
+       unnest(cf).toughness        AS toughness,
+       unnest(cf).loyalty          AS loyalty
+FROM src WHERE cf IS NOT NULL
 UNION ALL
 SELECT CAST(oracle_id AS VARCHAR), 0,
        name, mana_cost, type_line, oracle_text, power, toughness, loyalty
-FROM src WHERE card_faces IS NULL
+FROM src WHERE cf IS NULL
 """
 
 
@@ -108,6 +113,47 @@ def _build_faces(con: duckdb.DuckDBPyConnection, json_path: Path) -> None:
     con.execute("DROP TABLE IF EXISTS faces")
     con.execute(_FACE_SQL, [str(json_path)])
     con.execute("CREATE INDEX idx_faces_oracle ON faces(oracle_id)")
+
+def _build_tags(con: duckdb.DuckDBPyConnection, tags_path: Path) -> None:
+    """Community-curated functional tags from Scryfall's Tagger, stored not used.
+
+    Type says what a card *is*; a tag says what it *does* — removal, ramp, tutor —
+    which is the grouping deck optimization will eventually want. The bulk file is
+    one record per tag with a `taggings` array, so it lands as two tables: `tags`
+    (the vocabulary, with its parent hierarchy) and `card_tags` keyed by oracle_id,
+    one row per (card, tag), exploded so it is one GROUP BY away like face_types.
+
+    Optional on purpose: a clone that fetched only oracle_cards still builds.
+    """
+    con.execute("DROP TABLE IF EXISTS tags")
+    con.execute("DROP TABLE IF EXISTS card_tags")
+    if not tags_path.exists():
+        return
+    con.execute(
+        """
+        CREATE TABLE tags AS
+        SELECT slug, label, description,
+               [CAST(p AS VARCHAR) for p in parent_ids] AS parent_ids,
+               len(coalesce(taggings, [])) AS card_count
+        FROM read_json_auto(?, format = 'newline_delimited',
+                            maximum_object_size = 64000000)
+        """,
+        [str(tags_path)],
+    )
+    con.execute(
+        """
+        CREATE TABLE card_tags AS
+        SELECT CAST(u.t.oracle_id AS VARCHAR) AS oracle_id,
+               slug AS tag,
+               u.t.weight AS weight
+        FROM read_json_auto(?, format = 'newline_delimited',
+                            maximum_object_size = 64000000),
+             unnest(taggings) AS u(t)
+        """,
+        [str(tags_path)],
+    )
+    con.execute("CREATE INDEX idx_card_tags ON card_tags(oracle_id)")
+
 
 def _build_face_types(con: duckdb.DuckDBPyConnection) -> None:
     """Classify every face's type line into queryable list columns.
