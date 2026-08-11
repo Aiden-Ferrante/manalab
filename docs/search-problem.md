@@ -116,6 +116,24 @@ uniformly (Phase 1), group by composition vector, run the variance decomposition
 `Var(f) = Var(E[f|comp]) + E[Var(f|comp)]` under CRN. One experiment, one
 number, and it decides which column of the table above leads.
 
+**First run — 2026-08-11** (`examples/composition_variance.py`): 48 compositions
+× 6 identities over a 9,945-spell RG modern pool, 300 CRN games each, noise
+floor estimated on a second seed and subtracted:
+
+```
+σ² composition   0.007294        composition share  86.6%
+σ² identity      0.001133        noise floor        0.000154
+```
+
+**Verdict: composition-dominant — for this objective.** The caveat is the
+finding's edge, not a footnote: `consistency_t4` is a curve metric, and curve
+metrics respond to composition *by construction*. What this run proves is that
+the simplex-first architecture is right for the objective we can compute today.
+The share is expected to shift toward identity exactly as the objective grows
+toward win rate — synergy is invisible to goldfish consistency — so the
+experiment is rerun per objective, and the identity share becoming load-bearing
+is the *signal* to activate the hypergraph column, not a surprise.
+
 ## 7. Order of attack
 
 1. The variance-decomposition experiment (§6). Architecture-deciding, cheap.
