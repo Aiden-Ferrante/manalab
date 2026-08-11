@@ -58,11 +58,54 @@ def build(json_path: Path, db_path: Path = DEFAULT_DB) -> int:
             [str(json_path)],
         )
         con.execute("CREATE INDEX idx_cards_name ON cards(name)")
+        _build_faces(con, json_path)
         (count,) = con.execute("SELECT count(*) FROM cards").fetchone()
         return int(count)
     finally:
         con.close()
 
+
+# A card's text lives on its faces. Most cards have one; 886 of the 35,139 loaded
+# have two, and every one of those arrives with a NULL top-level `oracle_text` —
+# which is why reading the top level unconditionally left transform, adventure,
+# split, modal-DFC and flip cards silently textless.
+#
+# Single-faced cards get a synthesised face 0 from their top-level fields, so that
+# every card has at least one face and nothing downstream has to branch on layout.
+# The alternative — join the faces' text into one string — would be wrong: Fire and
+# Ice are different spells, and a transformed side's abilities are not available
+# until it transforms.
+_FACE_SQL = """
+CREATE TABLE faces AS
+WITH src AS (
+    SELECT * FROM read_json_auto(?, format = 'newline_delimited',
+                                 maximum_object_size = 64000000, ignore_errors = false)
+    WHERE type_line IS NOT NULL
+      AND type_line NOT LIKE 'Token%'
+      AND type_line NOT LIKE 'Card%'
+)
+SELECT CAST(oracle_id AS VARCHAR)          AS oracle_id,
+       unnest(range(0, len(card_faces)))   AS face_index,
+       unnest(card_faces).name             AS name,
+       unnest(card_faces).mana_cost        AS mana_cost,
+       unnest(card_faces).type_line        AS type_line,
+       unnest(card_faces).oracle_text      AS oracle_text,
+       unnest(card_faces).power            AS power,
+       unnest(card_faces).toughness        AS toughness,
+       unnest(card_faces).loyalty          AS loyalty
+FROM src WHERE card_faces IS NOT NULL
+UNION ALL
+SELECT CAST(oracle_id AS VARCHAR), 0,
+       name, mana_cost, type_line, oracle_text, power, toughness, loyalty
+FROM src WHERE card_faces IS NULL
+"""
+
+
+def _build_faces(con: duckdb.DuckDBPyConnection, json_path: Path) -> None:
+    """Explode `card_faces` into one row per printed side."""
+    con.execute("DROP TABLE IF EXISTS faces")
+    con.execute(_FACE_SQL, [str(json_path)])
+    con.execute("CREATE INDEX idx_faces_oracle ON faces(oracle_id)")
 
 class CardStore:
     """Read-only view over the built database.
