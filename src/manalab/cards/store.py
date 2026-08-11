@@ -7,12 +7,13 @@ JSON directly, so there is no intermediate parsing step in Python.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Iterable, Iterator, Mapping
 
 import duckdb
 
-from manalab.cards.model import Card, card_from_scryfall
+from manalab.cards.model import Card, Face, card_from_scryfall
 
 DEFAULT_DB = Path("data/cards.duckdb")
 
@@ -129,6 +130,27 @@ class CardStore:
             )
         self._con = duckdb.connect(str(self.db_path), read_only=True)
         self._cache: dict[str, Card] = {}
+        self._faces: dict[str, tuple[Face, ...]] | None = None
+
+    def _face_index(self) -> dict[str, tuple[Face, ...]]:
+        """Every face, keyed by card, loaded once.
+
+        36,030 rows is one cheap scan; a query per card would be 35,139 of them,
+        and `all_cards()` is the hot path this store exists to serve.
+        """
+        if self._faces is None:
+            rows = self._con.execute(
+                """SELECT oracle_id, face_index, name, oracle_text, mana_cost,
+                          type_line, power, toughness, loyalty
+                   FROM faces ORDER BY oracle_id, face_index""").fetchall()
+            grouped: dict[str, list[Face]] = {}
+            for oid, idx, name, text, cost, tline, pw, tf, loy in rows:
+                grouped.setdefault(str(oid), []).append(Face(
+                    index=int(idx), name=str(name or ""), oracle_text=str(text or ""),
+                    mana_cost=str(cost or ""), type_line=str(tline or ""),
+                    power=str(pw or ""), toughness=str(tf or ""), loyalty=str(loy or "")))
+            self._faces = {k: tuple(v) for k, v in grouped.items()}
+        return self._faces
 
     def close(self) -> None:
         self._con.close()
@@ -147,6 +169,9 @@ class CardStore:
 
     def _build(self, row: Mapping[str, object]) -> Card:
         card = card_from_scryfall(row)
+        faces = self._face_index().get(str(row.get("oracle_id")), ())
+        if faces:
+            card = replace(card, faces=faces)
         if not self.parse_effects:
             return card
         from manalab.cards.effects import with_effects

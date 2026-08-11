@@ -322,7 +322,26 @@ def _parse_clauses(body: str) -> tuple[tuple[Effect, ...], tuple[str, ...]]:
 
 
 def parse_card(card: Card) -> Parsed:
-    return parse_text(card.oracle_text, card.name, card.keywords)
+    """Parse every printed side, not just the top-level text.
+
+    Each face is parsed under its *own* name because `normalise` substitutes the
+    card name with `~`: the text of Fire reads "Fire deals 2 damage", and matching
+    it against the joined "Fire // Ice" would leave the clause unrecognised. So this
+    is a correctness requirement rather than tidiness.
+
+    Falls back to the top-level text when a card has no faces attached — cards built
+    straight from a Scryfall row, as the tests do, never went through the store.
+    """
+    if not card.faces:
+        return parse_text(card.oracle_text, card.name, card.keywords)
+
+    abilities: list[Ability] = []
+    for face in card.faces:
+        if face.oracle_text.strip():
+            abilities.extend(
+                parse_text(face.oracle_text, face.name, card.keywords).abilities)
+    return Parsed(card_name=card.name, abilities=tuple(abilities),
+                  keywords=frozenset(card.keywords))
 
 
 def with_effects(card: Card) -> Card:
@@ -380,14 +399,18 @@ def measure(cards: Sequence[Card]) -> Coverage:
 
         # A card with no clauses cannot fail one, so `fully_parsed` is True for
         # anything textless — correct for a vanilla bear, and a lie for a card whose
-        # text is sitting in `card_faces` we never read. Counting those as wins put
-        # 886 cards in the success column that the parser has never seen a word of,
-        # and inflated the headline from 60.9% to 63.4%.
-        if card.has_faces and not card.oracle_text.strip():
-            report.unread += 1
+        # text we simply never read. Counting those as wins put 886 cards in the
+        # success column the parser had not seen a word of.
+        #
+        # Readability is now a property of the faces, not of the top-level field:
+        # a multi-face card *always* has a null `oracle_text`, so testing that would
+        # keep reporting 886 unread long after the text became reachable.
+        text = "".join(f.oracle_text for f in card.faces) if card.faces else card.oracle_text
+        if card.has_faces and not card.faces:
+            report.unread += 1          # faces exist upstream but were not loaded
             continue
 
-        if not card.oracle_text.strip():
+        if not text.strip():
             report.vanilla += 1
         if parsed.fully_parsed:
             report.fully_parsed += 1

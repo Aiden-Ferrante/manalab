@@ -28,6 +28,26 @@ class Effect:
         return dict(self.params).get(key, default)
 
 
+@dataclass(frozen=True)
+class Face:
+    """One printed side. Most cards have exactly one.
+
+    Parsed separately from its siblings, and under its *own* name: `normalise`
+    substitutes the card name with `~`, and the text of Fire says "Fire deals 2
+    damage" — passing the joined "Fire // Ice" would never match. Per-face parsing
+    is a correctness requirement, not tidiness.
+    """
+
+    index: int
+    name: str
+    oracle_text: str = ""
+    mana_cost: str = ""
+    type_line: str = ""
+    power: str = ""
+    toughness: str = ""
+    loyalty: str = ""
+
+
 FACED_LAYOUTS = frozenset({
     "transform", "adventure", "split", "modal_dfc", "flip", "prepare",
     "double_faced_token", "meld", "battle_class", "reversible_card",
@@ -69,6 +89,10 @@ class Card:
     keywords: frozenset[str] = frozenset()
     colors: frozenset[str] = frozenset()
     color_identity: frozenset[str] = frozenset()
+    faces: tuple[Face, ...] = ()
+    """Every printed side, in printed order. Always at least one once loaded from
+    the store — a single-faced card gets a synthesised face 0 — so nothing reading
+    faces has to branch on layout."""
 
     @property
     def has_faces(self) -> bool:
