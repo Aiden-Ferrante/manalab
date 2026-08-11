@@ -3,10 +3,11 @@
 All notable changes to manalab are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [0.1.0] — 2026-08-11
 
-Everything below is the initial build. The repo has no commits yet — the first
-one, and the version cut, are deliberately left for review.
+Everything below existed before the repo was ever committed. `v0.1.0` is the
+baseline tag: the work brought under version control and verified green, not a
+plan-build-test-review cycle that just completed. 193 tests pass at this commit.
 
 ### Added — card database
 
