@@ -40,18 +40,23 @@ WORD_NUMBERS = {
     "twelve": 12, "thirteen": 13, "twenty": 20,
 }
 
-VARIABLE = -1
 """Stands in for X and other undetermined counts. Never confuse it with a real
 count — a card that draws X cards is not a card that draws -1."""
 
 
-def quantity(token: str) -> int:
-    token = token.strip().lower()
-    if token.isdigit():
-        return int(token)
-    if token in ("x", "y"):
-        return VARIABLE
-    return WORD_NUMBERS.get(token, VARIABLE)
+def quantity(token: str) -> int | str:
+    """A number when the text names one; the text itself when it does not.
+
+    `X` used to become -1, so "You gain X life" parsed as gain_life(-1) — a
+    confident wrong value wearing a success tick, which is worse than an unparsed
+    clause because coverage cannot see it. An amount is now either an int or the
+    original token ("X", "that many"), and the engine can tell which it got.
+    """
+    stripped = token.strip()
+    lowered = stripped.lower()
+    if lowered.isdigit():
+        return int(lowered)
+    return WORD_NUMBERS.get(lowered, stripped)
 
 
 def normalise(text: str, card_name: str = "") -> str:
@@ -117,7 +122,7 @@ PATTERNS: tuple[Pattern, ...] = (
     _p("search_library", r"\bsearch(?:es)? your library for ([^.]+)", "what"),
     _p("scry", r"\bscry (\d+)", "amount", numeric=("amount",)),
     _p("surveil", r"\bsurveil (\d+)", "amount", numeric=("amount",)),
-    _p("shuffle", r"\bshuffle\b"),
+    _p("shuffle", r"\bshuffles?\b"),
     # --- removal --------------------------------------------------------
     _p("counter_spell", r"\bcounters? target ([^.,]*spell[^.,]*)", "target"),
     _p("destroy", r"\bdestroys? ([^.,]+)", "target"),
@@ -130,8 +135,15 @@ PATTERNS: tuple[Pattern, ...] = (
        numeric=("amount",)),
     _p("put_counters", r"\bputs? (\w+) ([+\-]\d/[+\-]\d|\w+) counters? on ([^.,]+)",
        "amount", "kind", "target", numeric=("amount",)),
-    _p("pump", r"([^.,]+?) gets? ([+\-]\d+/[+\-]\d+)", "target", "amount"),
+    _p("pump", r"([^.,]+?) gets? ([+\-](?:\d+|X)/[+\-](?:\d+|X))", "target", "amount"),
     _p("gain_control", r"\bgains? control of ([^.,]+)", "target"),
+    _p("attach", r"\battach(?:es)? ([^.,]+?) to ([^.,]+)", "what", "target"),
+    # search() finds the verb inside a conditional clause, so the werewolf pair
+    # ("if no spells were cast last turn, transform…") lands here too, with the
+    # condition captured rather than discarded.
+    _p("transform", r"(?:if ([^,]+), )?transforms? ([^.,]+)", "condition", "target"),
+    _p("must_attack", r"\battacks? each combat if able"),
+    _p("block_restriction", r"\bcan block only ([^.,]+)", "only"),
     _p("tap", r"\btaps? ([^.,]+)", "target"),
     _p("untap", r"\buntaps? ([^.,]+)", "target"),
     # --- modifiers ------------------------------------------------------
@@ -144,6 +156,16 @@ PATTERNS: tuple[Pattern, ...] = (
     _p("cant_be_regenerated", r"\bcan'?t be regenerated\b"),
     _p("enters_tapped", r"\benters? tapped\b"),
     _p("regenerate", r"\bregenerate ([^.,]+)", "target"),
+    # --- keyword actions ------------------------------------------------
+    _p("proliferate", r"\bproliferate\b"),
+    _p("venture", r"\bventure into the dungeon\b"),
+    _p("monstrosity", r"\bmonstrosity (\d+|x)", "amount", numeric=("amount",)),
+    _p("ring_tempts", r"\bthe ring tempts you\b"),
+    _p("become_monarch", r"\bbecomes? the monarch\b"),
+    _p("get_energy", r"\byou get ((?:\{e\})+)", "amount"),
+    _p("flip_coin", r"\bflips? \w+ coins?\b"),
+    _p("roll_die", r"\broll [^.,]*?\bdi(?:e|ce)\b"),
+    _p("choose_type", r"\bchoose an? (\w+(?: card)?) type\b", "kind"),
     # --- structure and riders -------------------------------------------
     # Not effects themselves, but the alternative is reporting a modal spell's
     # header as an unparsed gap and overstating how much is missing.
@@ -151,12 +173,43 @@ PATTERNS: tuple[Pattern, ...] = (
     _p("timing_restriction", r"\bactivate only ([^.]+)", "when"),
     _p("trigger_limit", r"\btriggers only ([^.]+)", "when"),
     _p("optional_cost", r"\byou may pay (\{[^}]+\}|\d+)", "amount"),
+    # Copy riders, impulse-draw riders, animation riders: clauses that qualify a
+    # neighbouring effect. Reporting them as gaps overstated what was missing.
+    _p("may_choose_new_targets", r"\bmay choose new targets\b"),
+    _p("may_play", r"\bmay play (?:that card|those cards|them|it)\b"),
+    _p("may_look_top", r"\bmay look at the top card of your library"),
+    _p("still_a_land", r"\b(?:it'?s|they'?re) still (?:a )?lands?\b"),
+    _p("can_be_commander", r"\bcan be your commander\b"),
+    _p("anyone_may_activate", r"\bany player may activate\b"),
+    _p("enters_with_counters",
+       r"\benters(?: the battlefield)? with (\w+) ([+\-]\d/[+\-]\d|\w+) counters?",
+       "amount", "kind", numeric=("amount",)),
+    # Leveler and sticker layout lines. Not effects — the printed frame leaking
+    # into oracle text — but reporting "LEVEL 6-11" and "6/6" as unparsed gaps
+    # made the parser look worse at exactly the cards it understood fine.
+    # Two shapes share the word: a leveler's band header ("LEVEL 6-11",
+    # "LEVEL 12+") and a Class's level-up effect ("{4}{G}: Level 2" — the clause
+    # is just "Level 2"). One pattern, optional range.
+    _p("level_band", r"^level (\d+)(?:-(\d+))?\+?$", "from", "to",
+       numeric=("from", "to")),
+    _p("stat_line", r"^(\d+|\*)/(\d+|\*)$", "power", "toughness"),
+    _p("sticker_stats", r"(?:\{tk\})+\s*—\s*(\d+)/(\d+)", "power", "toughness"),
     # --- information ----------------------------------------------------
     _p("reveal", r"\breveals? ([^.,]+)", "what"),
-    _p("look_at", r"\blook at the top (\w+) cards?", "amount", numeric=("amount",)),
+    _p("look_at", r"\blook at the top (?:(\w+) )?cards?", "amount", numeric=("amount",)),
     _p("put_on_bottom", r"\bput the rest on the bottom", ),
     _p("investigate", r"\binvestigate\b"),
     _p("grant_ability", r"\bgains? ([^.,]+) until end of turn", "ability"),
+    # A bare grant with no duration — "It gains haste." Restricted to a keyword
+    # list so "gains that much life" stays with its own verb, and fenced off from
+    # the durationed form above: patterns are all-match-per-clause, not first-wins,
+    # so without the lookahead "gains flying until end of turn" fired both and
+    # counted twice.
+    _p("grant_ability",
+       r"\bgains? (haste|flying|trample|first strike|double strike|vigilance"
+       r"|lifelink|deathtouch|menace|reach|hexproof|shroud|indestructible"
+       r"|protection from [^.,]+)\b(?![^.]*until end of turn)", "ability"),
+    _p("gain_life", r"\bgains? (that much) life", "amount"),
 )
 
 

@@ -14,7 +14,6 @@ from __future__ import annotations
 import pytest
 
 from manalab.cards.effects import (
-    VARIABLE,
     normalise,
     parse_text,
     quantity,
@@ -63,8 +62,11 @@ def test_quantity_words_and_variables() -> None:
     assert quantity("3") == 3
     assert quantity("two") == 2
     assert quantity("a") == 1
-    assert quantity("X") == VARIABLE
-    assert quantity("gibberish") == VARIABLE
+    # A variable stays itself. It used to become -1 — a number that looks like an
+    # answer, which the old test here endorsed while its sibling's docstring said
+    # the opposite.
+    assert quantity("X") == "X"
+    assert quantity("gibberish") == "gibberish"
 
 
 # --- verbs --------------------------------------------------------------
@@ -107,8 +109,11 @@ def test_counter_spell_is_matched_before_generic_targets() -> None:
 
 
 def test_x_costs_produce_a_variable_not_a_number() -> None:
-    """A card that draws X cards must not read as drawing -1."""
-    assert params("Draw X cards.", "draw")["amount"] == VARIABLE
+    """A card that draws X cards must not read as drawing -1.
+
+    The old assertion compared against VARIABLE — which *was* -1, so the test
+    endorsed exactly what its own docstring forbade."""
+    assert params("Draw X cards.", "draw")["amount"] == "X"
 
 
 # --- ability structure --------------------------------------------------
