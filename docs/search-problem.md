@@ -117,7 +117,7 @@ uniformly (Phase 1), group by composition vector, run the variance decomposition
 number, and it decides which column of the table above leads.
 
 **First run — 2026-08-11** (`examples/composition_variance.py`): 48 compositions
-× 6 identities over a 9,945-spell RG modern pool, 300 CRN games each, noise
+× 6 identities over a 9,945-spell RG pool (all formats — the modern filter in an earlier draft silently did nothing and is removed), 300 CRN games each, noise
 floor estimated on a second seed and subtracted:
 
 ```

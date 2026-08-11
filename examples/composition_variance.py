@@ -49,12 +49,16 @@ def bucket_of(cmc: float) -> str:
 
 
 def build_pool(store: CardStore):
-    """Modern-legal RG spells, bucketed by curve slot."""
+    """RG spells across all formats, bucketed by curve slot.
+
+    Not format-filtered: a legality filter was drafted here and silently did
+    nothing — Card carries no legalities field — so the honest description is
+    the broad pool, which if anything makes the composition result *more*
+    general, not less."""
     pool: dict[str, list] = {b: [] for b in BUCKETS}
     for card in store.all_cards():
         if card.is_land or not card.faces:
             continue
-        legal = getattr(card, "legalities", None)
         types = card.card_types
         if not types or not types & {"creature", "instant", "sorcery",
                                      "artifact", "enchantment", "planeswalker"}:
