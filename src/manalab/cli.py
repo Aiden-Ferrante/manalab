@@ -55,8 +55,15 @@ def _cmd_fetch(args: argparse.Namespace) -> int:
     if args.dry_run:
         return 0
 
+    before = dest.stat().st_mtime if dest.exists() else None
     bulk.download(args.kind, DATA, force=args.force)
-    print(f"done ({dest.stat().st_size / 1_000_000:.1f} MB on disk)")
+    # Say which of the two things actually happened. "done" covered both keeping a
+    # three-day-old file and downloading a fresh one, which is how staleness hid.
+    if before is not None and dest.stat().st_mtime == before:
+        print(f"already current ({dest.stat().st_size / 1_000_000:.1f} MB, "
+              f"updated {entry.updated_at})")
+    else:
+        print(f"downloaded ({dest.stat().st_size / 1_000_000:.1f} MB)")
     return 0
 
 

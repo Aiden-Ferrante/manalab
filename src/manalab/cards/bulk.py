@@ -13,6 +13,7 @@ research, requires attribution, is not CC0. See ATTRIBUTION.md.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import urllib.request
@@ -84,21 +85,49 @@ def download(kind: str, data_dir: Path = Path("data"), *, force: bool = False) -
 
     `oracle_cards` is what you want: one record per distinct card, ~25 MB
     compressed. `default_cards` and `all_cards` include every printing.
+
+    Skips only when the local copy matches upstream's `updated_at`, recorded in a
+    sidecar at download time. The old rule — skip whenever the file exists — made
+    a re-fetch against *changed* upstream data a silent no-op: the CLI printed the
+    new timestamp and URL, kept a three-day-old file, and said "done".
     """
     entry = _entry(kind)
     dest = Path(data_dir) / f"{kind}{entry.suffix}"
+    meta = dest.with_suffix(dest.suffix + ".meta.json")
+
     if dest.exists() and not force:
-        return dest
+        recorded = _provenance(meta)
+        if recorded.get("updated_at") == entry.updated_at:
+            return dest      # genuinely current — this is the no-op the waypoint asks for
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_name(dest.name + ".part")
 
     req = urllib.request.Request(entry.download_uri, headers=HEADERS)
+    digest = hashlib.sha256()
     with urllib.request.urlopen(req, timeout=600) as resp, tmp.open("wb") as fh:
-        shutil.copyfileobj(resp, fh, length=1 << 20)
+        while chunk := resp.read(1 << 20):
+            fh.write(chunk)
+            digest.update(chunk)
 
     tmp.replace(dest)
+    meta.write_text(json.dumps({
+        "kind": kind,
+        "updated_at": entry.updated_at,
+        "download_uri": entry.download_uri,
+        "sha256": digest.hexdigest(),
+        "bytes": dest.stat().st_size,
+    }, indent=2) + "\n")
     return dest
+
+
+def _provenance(meta: Path) -> dict:
+    """What we recorded when the file was written. Empty when unknown — a file
+    with no sidecar predates provenance and must be treated as stale."""
+    try:
+        return json.loads(meta.read_text())
+    except (OSError, ValueError):
+        return {}
 
 
 def _entry(kind: str) -> BulkEntry:
