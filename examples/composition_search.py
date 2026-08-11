@@ -33,7 +33,7 @@ from manalab.cards.model import Decklist  # noqa: E402
 from manalab.cards.store import CardStore  # noqa: E402
 from manalab.evaluate.consistency import ConsistencyEvaluator  # noqa: E402
 from manalab.search.manafit import FittedEvaluator  # noqa: E402
-from manalab.search.objective import CONSISTENCY  # noqa: E402
+from manalab.search.objective import THROUGHPUT as OBJECTIVE  # noqa: E402
 
 N_GAMES = 300
 M_IDENTITIES = 3
@@ -73,7 +73,7 @@ def evaluate_composition(comp, pool, cards, store) -> float:
             cards.update(store.resolve(needed))
         inner = ConsistencyEvaluator(cards=cards)
         fitted = FittedEvaluator(inner=inner, cards=cards, lands=comp["lands"])
-        scores.append(CONSISTENCY(fitted.evaluate(deck, n_games=N_GAMES,
+        scores.append(OBJECTIVE(fitted.evaluate(deck, n_games=N_GAMES,
                                                   seed=SEED_GAMES)))
     return statistics.mean(scores)
 
@@ -146,9 +146,8 @@ def main() -> int:
         print(f"  {label:<22} {show(comp)}   f={f:.4f}")
 
     print()
-    print("read the winner against the objective, not against Magic:")
-    print("consistency_t4 pays for 4 mana by turn 4 and for nothing a spell does,")
-    print("so a lands-heavy drift is the objective's edge showing, not a deck tip.")
+    print("throughput pays only for mana actually spent on spells, so lands have")
+    print("an interior optimum — watch whether the climb finds it rather than a rail.")
     return 0
 
 

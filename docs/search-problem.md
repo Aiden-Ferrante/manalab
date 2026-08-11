@@ -125,6 +125,28 @@ floor estimated on a second seed and subtracted:
 σ² identity      0.001133        noise floor        0.000154
 ```
 
+**Second run — 2026-08-11, Standard pool, throughput objective**
+(`mana_spent`: total mana converted into spells — an interior land optimum by
+construction). Same design, format filter through `store.legal_in`:
+
+```
+σ² composition   1.369        composition share  67.7%
+σ² identity      0.653        noise floor        0.040
+```
+
+The shift is the §6 mechanism working as predicted: the moment the objective
+could see spells at all, identity's share nearly tripled (13.4% → 32.3%).
+**Verdict revised to MIXED** — the two-level architecture stands, but identity
+terms enter earlier than the pure-simplex plan assumed, and each step toward a
+synergy-sighted objective should be expected to shift it further.
+
+The paired search run confirmed the teeth and exposed the next edge in one
+sweep: lands found an interior optimum (26–27, off the 32 rail consistency_t4
+had pinned), but a hand-picked 28-land top-heavy composition beat the 80-proposal
+climb (21.88 vs 20.99) — first-improvement hill climbing stalls short, and
+throughput's own gameability is already visible: mana spent ≈ cmc, so it
+overvalues expensive spells. The objective ladder continues.
+
 **Verdict: composition-dominant — for this objective.** The caveat is the
 finding's edge, not a footnote: `consistency_t4` is a curve metric, and curve
 metrics respond to composition *by construction*. What this run proves is that

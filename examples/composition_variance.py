@@ -33,7 +33,7 @@ from collections import Counter
 from manalab.cards.model import Decklist
 from manalab.cards.store import CardStore
 from manalab.evaluate.consistency import ConsistencyEvaluator
-from manalab.search.objective import CONSISTENCY
+from manalab.search.objective import THROUGHPUT as OBJECTIVE
 
 K_COMPOSITIONS = 48
 M_IDENTITIES = 6
@@ -48,16 +48,18 @@ def bucket_of(cmc: float) -> str:
     return BUCKETS[min(max(int(cmc), 1), 5) - 1]
 
 
-def build_pool(store: CardStore):
-    """RG spells across all formats, bucketed by curve slot.
+def build_pool(store: CardStore, fmt: str | None = "standard"):
+    """RG spells bucketed by curve slot, format-filtered through the store.
 
-    Not format-filtered: a legality filter was drafted here and silently did
-    nothing — Card carries no legalities field — so the honest description is
-    the broad pool, which if anything makes the composition result *more*
-    general, not less."""
+    The filter goes through `store.legal_in`, which reads the legalities column —
+    the Card object itself carries none, which is how an earlier draft's filter
+    silently did nothing. Pass fmt=None for the all-formats pool run 1 used."""
+    legal = set(store.legal_in(fmt)) if fmt else None
     pool: dict[str, list] = {b: [] for b in BUCKETS}
     for card in store.all_cards():
         if card.is_land or not card.faces:
+            continue
+        if legal is not None and card.name not in legal:
             continue
         types = card.card_types
         if not types or not types & {"creature", "instant", "sorcery",
@@ -139,7 +141,7 @@ def main() -> int:
     flat: list[tuple[int, int, float]] = []
     for i, (k, deck) in enumerate(decks):
         result = evaluator.evaluate(deck, n_games=N_GAMES, seed=SEED_CRN)
-        f = CONSISTENCY(result)
+        f = OBJECTIVE(result)
         scores.setdefault(k, []).append(f)
         flat.append((i, k, f))
         if i % 48 == 0:
@@ -149,7 +151,7 @@ def main() -> int:
     diffs = []
     for i, k, f1 in flat[:NOISE_DECKS]:
         result = evaluator.evaluate(decks[i][1], n_games=N_GAMES, seed=SEED_NOISE)
-        diffs.append(f1 - CONSISTENCY(result))
+        diffs.append(f1 - OBJECTIVE(result))
     noise_var = statistics.variance(diffs) / 2 if len(diffs) > 1 else 0.0
 
     group_means = [statistics.mean(v) for v in scores.values()]
@@ -162,7 +164,7 @@ def main() -> int:
     total = var_comp + var_identity
 
     print()
-    print(f"objective            : {CONSISTENCY.name}  (n={N_GAMES} games, CRN)")
+    print(f"objective            : {OBJECTIVE.name}  (n={N_GAMES} games, CRN)")
     print(f"grand mean           : {statistics.mean(f for _, _, f in flat):.4f}")
     print(f"noise floor (var)    : {noise_var:.6f}")
     print(f"σ² composition       : {var_comp:.6f}")

@@ -74,6 +74,19 @@ class LinearObjective:
 
 
 CONSISTENCY = LinearObjective({"p_on_curve_t4": 1.0}, name="consistency_t4")
+THROUGHPUT = LinearObjective({"mana_spent": 1.0}, name="throughput")
+"""Total mana converted into spells across the game — the objective with teeth.
+
+Where consistency_t4 pays for mana *available* and nothing else (its optimum was
+32+ lands and zero four-drops, found empirically), throughput pays only for mana
+actually spent on spells, so it has an interior land optimum by construction:
+too few lands and you cannot spend, too many and there is nothing to spend on.
+
+Still synergy-blind, and honestly so: a spell's value here is its mana cost, so
+an overcosted blank counts the same as a bomb. That is the *next* objective's
+problem — this one exists so composition search stops being able to win by
+cutting spells.
+"""
 """Default working objective. Deliberately narrow and deliberately not "win rate".
 
 Known to be gameable on its own — see the degenerate-deck problem in Phase 5 of
