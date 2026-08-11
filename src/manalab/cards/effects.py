@@ -213,7 +213,10 @@ class Parsed:
 
 
 # Lines that are purely keyword abilities, e.g. "Flying, vigilance".
-_KEYWORD_LINE = re.compile(r"^[A-Za-z][A-Za-z' \-]*(,\s*[A-Za-z][A-Za-z' \-]*)*$")
+# Older cards separate them with a semicolon — "Flying; swampwalk", "Trample;
+# banding" — and rejecting those made 30 cards, several of them nothing *but*
+# keywords, parse at 0%.
+_KEYWORD_LINE = re.compile(r"^[A-Za-z][A-Za-z' \-]*([,;]\s*[A-Za-z][A-Za-z' \-]*)*$")
 
 EXTRA_KEYWORDS = frozenset({
     "enchant", "equip", "cycling", "crew", "ward", "kicker", "level up",
@@ -260,7 +263,7 @@ def _keyword_ability(line: str, known: set[str]) -> Ability | None:
 
     # A pure comma-separated list of keywords, e.g. "Flying, vigilance".
     if _KEYWORD_LINE.match(line):
-        parts = [p.strip().lower() for p in line.split(",")]
+        parts = [p.strip().lower() for p in re.split(r"[,;]", line)]
         if parts and all(p in known for p in parts):
             return Ability(kind="keyword", text=line)
 
