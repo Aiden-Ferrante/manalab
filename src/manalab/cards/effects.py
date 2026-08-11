@@ -306,6 +306,13 @@ def _keyword_ability(line: str, known: set[str]) -> Ability | None:
             return Ability(kind="keyword", text=line)
         if lowered.startswith(keyword) and len(lowered) > len(keyword):
             tail = lowered[len(keyword):]
+            if tail.startswith(" — "):
+                # An ability word, not a parameterised keyword. "Enrage — Whenever
+                # this creature is dealt damage, …" is a full ability wearing a
+                # label; capturing it as keyword.param swallowed the trigger whole,
+                # which was most of the conjunction-swallow smells. Ability words
+                # always take a spaced em-dash; keyword parameters never do.
+                return None
             if tail[0] in " —-:{":
                 param = _KEYWORD_PARAM.match(tail).group(1).strip(" .")
                 return Ability(
@@ -336,7 +343,40 @@ def parse_text(text: str, card_name: str = "", keywords: Iterable[str] = ()) -> 
     return Parsed(card_name=card_name, abilities=tuple(abilities), keywords=frozenset(known))
 
 
+_GRANT_FRAME = re.compile(
+    r'^(.*?)\b(?:have|has|gains?|with)\s+"(.+)"[.\s]*$', re.S)
+_ABILITY_WORD = re.compile(r"^([A-Z][A-Za-z' ]*?) — (.+)$", re.S)
+
+
 def _parse_line(line: str, known_keywords: set[str]) -> Ability:
+    # Text inside quotes is another object's ability — a granted activated
+    # ability, a token's text — and parsing inside it produced the worst class of
+    # wrong answer: Sedge Sliver read as pump with target 'All Sliver creatures
+    # have "This creature'. The whole quoted span is one grant.
+    if '"' in line:
+        framed = _GRANT_FRAME.match(line)
+        if framed:
+            who, granted = framed.groups()
+            return Ability("spell", line, effects=(
+                Effect("grant_text", (("who", who.strip(" ,")),
+                                      ("text", granted.strip()))),))
+        # Quotes we cannot frame: refusing beats parsing another card's text
+        # as this card's own.
+        return Ability("spell", line, effects=(), unparsed=(line,))
+
+    # "Landfall — Whenever a land you control enters, …": the label is a marker
+    # and the tail is the ability. Parsed recursively so the trigger, cost and
+    # clauses land exactly as they would without the label.
+    worded = _ABILITY_WORD.match(line)
+    if worded and worded.group(1).lower() in known_keywords:
+        inner = _parse_line(worded.group(2), known_keywords)
+        return Ability(inner.kind, line,
+                       effects=(Effect("ability_word",
+                                       (("name", worded.group(1).lower()),)),)
+                       + inner.effects,
+                       unparsed=inner.unparsed,
+                       trigger=inner.trigger, cost=inner.cost)
+
     # A keyword ability names a rule; it is not text to be parsed into effects.
     keyword = _keyword_ability(line, known_keywords)
     if keyword is not None:
