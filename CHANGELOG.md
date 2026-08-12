@@ -3,6 +3,57 @@
 All notable changes to manalab are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+One day, two arcs — the card database made exact, and the deck-search ladder.
+The full narrative with every number lives in `docs/campaign-2026-08-11.md`;
+this is the ledger.
+
+### Added
+
+- **A `faces` table** — one row per printed side, synthesised face 0 for
+  single-faced cards, so every card has at least one face and nothing downstream
+  branches on layout. The parser reads every face under its own name (the text
+  of Fire says "Fire", not "Fire // Ice"), which surfaced 886 previously
+  unreachable card texts.
+- **`face_types` classification** — supertypes, card types, subtypes and
+  refused-to-guess unknowns per face, in the database (one GROUP BY away) and on
+  the model (`Card.card_types`, union across faces). Nine unknowns in 36,030
+  faces, all Un-set jokes.
+- **Exhaustive verification** (`examples/verify_exact.py`) — every card, every
+  face, every field against Scryfall's own export: zero diffs; derived-field
+  invariants checked (zero attested producers invisible); exit code is the
+  contract.
+- **Fetch provenance** — downloads record updated_at/sha256 in a sidecar and the
+  skip compares against it; "already current" and "downloaded" are now different
+  messages, because "done" covering both is how a three-day-stale file hid.
+- **The search ladder**: `search-problem.md` (the problem stated precisely),
+  `composition_variance.py` (the standing architecture experiment, ADR 0007),
+  `manafit.py` (bilevel basics fitting behind `FittedEvaluator`),
+  `ports.py` (provide/require synergy ports, bottleneck score, injected as a
+  zero-variance metric), objectives `THROUGHPUT` and `THROUGHPUT_SYNERGY`, and
+  `composition_search.py` (CRN-paired hill climb on the simplex). Identity's
+  variance share moved 13.4% → 32.3% → 53.6% across the three rungs.
+
+### Fixed
+
+- **Textless was conflated with unread** — 886 face-carrying cards counted as
+  parsing successes the parser had never seen a word of. Coverage moved
+  63.4% → 60.9% by telling them apart, which is the direction honesty went.
+- **Quoted grants and ability words produced wrong parses** — Sedge Sliver read
+  as its own pump; Enrage swallowed its trigger into a keyword parameter.
+  Smells 4.83% → 2.11% across 60k effects.
+- **`X` amounts parsed as −1** — "You gain X life" as gain_life(−1), endorsed
+  by a test whose docstring forbade it. Amounts are now an int or the original
+  token.
+- **Keyword lines with semicolons parsed at 0%** ("Flying; swampwalk").
+- **The changelog you are reading was 21 commits behind** its own repo.
+
+### Changed
+
+- Coverage reporting separates `text unread` from `vanilla`, and prints share
+  of readable alongside share of all.
+
 ## [0.1.0] — 2026-08-11
 
 Everything below existed before the repo was ever committed. `v0.1.0` is the

@@ -9,21 +9,28 @@ while the search machinery above it is built to last. See [ARCHITECTURE.md](ARCH
 
 ## Status
 
-Current focus: **the rules engine and the card database.** Search is parked.
+Current focus: **the search ladder and the rules engine.**
 
-- **M0 — card data spine.** Done. Scryfall bulk → DuckDB, keyless.
+- **M0 — card data spine.** Done, and now *exhaustively verified*: every card,
+  face and field checked against Scryfall's own export (`examples/verify_exact.py`,
+  zero diffs), faces loaded so no card is silently textless, per-face type
+  classification queryable in SQL.
 - **M1 — evaluator seam + goldfish sim.** Done. Mulligans, correct colored-mana
-  payment, hand-aware land sequencing, consistency metrics.
-- **M2 — deckbuilding search.** *Dormant, not abandoned.* Phases 0–2 landed and
-  are green: reproducible harness with exact budget accounting, uniform sampling
-  over the feasible set, ground-truth tiers with a closed-form optimum, and
-  paired comparison measuring 5.8× variance reduction from common random
-  numbers. It sits entirely above the `Evaluator` seam, so nothing in it
-  constrains the engine work. See `docs/M2_PROMPT.md` to resume.
+  payment, hand-aware land sequencing, consistency metrics; Karsten's published
+  colored-source tables reproduced end to end.
+- **M2 — deckbuilding search.** *Active.* The problem is stated precisely in
+  `docs/search-problem.md`; the architecture is decided by a standing
+  variance-decomposition experiment rerun at every objective rung (ADR 0007).
+  Three rungs on record — identity's share of variance moved 13.4% → 53.6% as
+  objectives learned to see spells — with bilevel mana fitting and synergy
+  ports as permanent fixtures. Narrative: `docs/campaign-2026-08-11.md`.
 - **M5 — rules engine.** *In progress.* Real game state: zones, turn structure,
-  priority, the stack, two players. Grown one effect verb at a time.
-- **M6 — card database depth.** *In progress.* Effect verbs parsed from oracle
-  text, MTGJSON printings, Scryfall oracle tags, format legality and curated pools.
+  priority, the stack, two players. Grown one effect verb at a time. Now also
+  the calibration path for synergy weights — λ is a declared prior until an
+  evaluator can watch a sacrifice resolve.
+- **M6 — card database depth.** Effect-verb parsing at 65.6% of cards with the
+  unparsed remainder named and ranked; precision smells at 2.11% with a 30-card
+  human audit pending (`reports/audit_effects.md`).
 - **M3 — validation against 17Lands.** Not started.
 - **M4 — a Forge-backed evaluator.** Not started. Needs JDK 17+.
 
