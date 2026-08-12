@@ -3,7 +3,7 @@
 All notable changes to manalab are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [0.2.0] — 2026-08-11
 
 One day, two arcs — the card database made exact, and the deck-search ladder.
 The full narrative with every number lives in `docs/campaign-2026-08-11.md`;
