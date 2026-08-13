@@ -18,7 +18,9 @@ from dataclasses import dataclass, field
 from typing import Sequence
 
 import manalab.engine.actions as A
+import manalab.engine.combat as combat
 import manalab.engine.mana as mana
+import manalab.engine.resolve as resolve
 import manalab.engine.sba as sba
 from manalab.engine.agents import Agent
 from manalab.engine.objects import GameObject
@@ -61,6 +63,8 @@ class Game:
         self.max_turns = max_turns
         self.opening_hand = opening_hand
         self.unmodeled: dict[str, str] = {}
+        self._targets: dict[int, tuple] = {}
+        """Targets chosen on announcement, keyed by the spell's id on the stack."""
 
     # --- setup ----------------------------------------------------------
 
@@ -140,6 +144,7 @@ class Game:
         elif step is Step.CLEANUP:
             for obj in state.battlefield():
                 obj.damage = 0
+                obj.deathtouched = False
 
     # --- priority -------------------------------------------------------
 
@@ -191,7 +196,12 @@ class Game:
         elif isinstance(action, A.CastSpell):
             obj = state.objects[action.object_id]
             mana.pay(state, player, obj.card.cost)
-            state.move(obj, Zone.STACK, controller=player)
+            moved = state.move(obj, Zone.STACK, controller=player)
+            # A card changing zones becomes a new object (CR 400.7), so the
+            # targets have to be filed under the id it has *on the stack*.
+            # Keying them by the hand id leaves every spell resolving untargeted.
+            if action.targets:
+                self._targets[moved.id] = action.targets
         else:  # pragma: no cover - the priority loop offers nothing else
             raise NotImplementedError(action)
 
@@ -202,12 +212,16 @@ class Game:
 
         if top.card.is_permanent:
             state.move(top, Zone.BATTLEFIELD, controller=top.controller)
+            return
+
+        chosen = self._targets.pop(top.id, ())
+        blocked = resolve.unsupported(top.card)
+        if blocked:
+            self.unmodeled.setdefault(top.card.name, "; ".join(blocked))
         else:
-            # No effect verbs yet: the spell resolves and does nothing at all.
-            self.unmodeled.setdefault(
-                top.card.name, "resolved with no effect (no verb implementation)"
-            )
-            state.move(top, Zone.GRAVEYARD)
+            resolve.apply(state, top, chosen, state.log)
+
+        state.move(top, Zone.GRAVEYARD)
 
     # --- combat ---------------------------------------------------------
 
@@ -236,7 +250,12 @@ class Game:
         attackers = [o.id for o in self._attackers()]
         defender = (state.active_player + 1) % len(state.players)
 
-        options = A.legal_blocks(state, defender, attackers)
+        options, truncated = A.legal_blocks(state, defender, attackers)
+        if truncated:
+            self.unmodeled.setdefault(
+                "<block enumeration>",
+                "board too wide to enumerate every block; weakest blockers held back",
+            )
         choice = self.agents[defender].act(state, defender, options)
         if not isinstance(choice, A.DeclareBlockers):
             raise ValueError("expected a block declaration")
@@ -248,32 +267,24 @@ class Game:
             attacker.blocked_by = attacker.blocked_by + (blocker_id,)
 
     def _combat_damage(self) -> None:
-        """All combat damage at once (CR 510.2).
+        """Combat damage, as a first-strike pass followed by a regular one.
 
-        First strike is not modelled: a creature with it deals damage in this
-        same step, so it trades with things it should kill cleanly.
+        The first pass is skipped entirely when nobody in combat has first or
+        double strike, which is the overwhelmingly common case — and state-based
+        actions run between the passes, so a creature killed by first strike
+        never gets to strike back.
         """
         state = self.state
-        pending: list[tuple[GameObject, int]] = []
+        attackers = self._attackers()
 
-        for attacker in self._attackers():
-            if attacker.is_blocked:
-                for blocker_id in attacker.blocked_by:
-                    blocker = state.objects.get(blocker_id)
-                    if blocker is None or blocker.zone is not Zone.BATTLEFIELD:
-                        continue
-                    pending.append((blocker, attacker.power))
-                    pending.append((attacker, blocker.power))
-            else:
-                state.players[attacker.attacking].lose_life(attacker.power)
-                state.log.append(
-                    f"{attacker.card.name} hits P{attacker.attacking} for {attacker.power}"
-                )
+        if combat.any_first_strike(attackers, state):
+            for line in combat.combat_damage(state, attackers, first_strike_pass=True):
+                state.log.append(line)
+            sba.check(state)
+            attackers = self._attackers()
 
-        # Applied after the loop so that damage really is simultaneous — a
-        # creature that dies must still have dealt its damage.
-        for obj, amount in pending:
-            obj.damage += amount
+        for line in combat.combat_damage(state, attackers, first_strike_pass=False):
+            state.log.append(line)
 
         if any(o.card.taps_for_mana for o in state.battlefield()):
             self.unmodeled.update(mana.unmodeled_sources(state))

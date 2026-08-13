@@ -104,7 +104,7 @@ class CurveAgent:
 
         spells = [o for o in options if isinstance(o, CastSpell)]
         if spells:
-            return max(spells, key=lambda a: state.objects[a.object_id].card.cmc)
+            return max(spells, key=lambda a: self._spell_value(state, player, a))
 
         attacks = [o for o in options if isinstance(o, DeclareAttackers)]
         if attacks:
@@ -117,23 +117,112 @@ class CurveAgent:
 
         return do_nothing(options)
 
+    @staticmethod
+    def _spell_value(state: GameState, player: int, action: CastSpell) -> tuple[float, float]:
+        """Rank one casting. Returns (cast priority, target quality).
+
+        The engine hands the agent one `CastSpell` per legal choice of target, so
+        without a preference here "cast the biggest thing" picks an arbitrary
+        target — and since "target creature" includes your own board, the crude
+        pilot will cheerfully Murder its own best creature. That is not a
+        interestingly-bad play, it is a broken measuring instrument.
+
+        Still deliberately shallow: it does not hold removal for a better threat,
+        does not play around anything, and values a creature purely by its body.
+        """
+        card = state.objects[action.object_id].card
+        verbs = {effect.verb for effect in card.effects}
+        harmful = bool(verbs & {"deal_damage", "destroy"})
+        helpful = "pump" in verbs
+
+        if "counter_spell" in verbs:
+            # Countering is worth doing when it is the opponent's spell and the
+            # spell is worth answering; countering your own is never right.
+            quality = 0.0
+            for target in action.targets:
+                obj = state.objects.get(target.object_id)
+                if obj is None:
+                    continue
+                quality += -100.0 if obj.controller == player else 5.0 + obj.card.cmc
+            # Ranked above ordinary spells so a held counter actually gets used
+            # rather than losing the comparison to a bigger creature.
+            return (99.0, quality)
+
+        quality = 0.0
+        for target in action.targets:
+            if target.is_player:
+                # Burning the opponent is fine; burning yourself never is.
+                quality += 3.0 if target.player != player else -100.0
+                continue
+            obj = state.objects.get(target.object_id)
+            if obj is None:
+                continue
+            body = obj.power + obj.toughness
+            mine = obj.controller == player
+            if harmful:
+                quality += (-100.0 if mine else body)
+            elif helpful:
+                quality += (body if mine else -100.0)
+
+        return (card.cmc, quality)
+
     def _best_block(
         self, state: GameState, player: int, blocks: Sequence[DeclareBlockers]
     ) -> DeclareBlockers:
-        """Block only when the blocker survives and the attacker dies.
+        """Score each complete assignment; take the best.
 
-        Chump-blocking to save life total is often correct and this will never
-        do it. That is a known weakness, not an oversight.
+        Deliberately shallow — it values a trade, avoids a pointless chump, and
+        chumps anyway when the alternative is dying this turn. It does not
+        reason about multi-blocking a single large attacker, damage assignment
+        order, or what it wants the board to look like next turn.
+
+        Keyword-aware only where ignoring a keyword would be a *rules* mistake
+        rather than a judgement one: deathtouch kills whatever it touches, and
+        trample means chumping saves far less life than it appears to.
         """
-        best, best_value = blocks[0], 0
-        for option in blocks:
-            value = 0
-            for blocker_id, attacker_id in option.blocks:
-                blocker = state.objects[blocker_id]
-                attacker = state.objects[attacker_id]
-                kills = blocker.power >= attacker.toughness
-                survives = attacker.power < blocker.toughness
-                value += (2 if kills else 0) + (1 if survives else -1)
+        lethal_incoming = self._incoming(state, player, blocks[0]) >= state.players[player].life
+
+        best, best_value = blocks[0], self._score(state, player, blocks[0], lethal_incoming)
+        for option in blocks[1:]:
+            value = self._score(state, player, option, lethal_incoming)
             if value > best_value:
                 best, best_value = option, value
         return best
+
+    @staticmethod
+    def _incoming(state: GameState, player: int, no_blocks: DeclareBlockers) -> int:
+        """Damage the defending player takes if nothing blocks."""
+        return sum(
+            obj.power
+            for obj in state.battlefield()
+            if obj.attacking == player and obj.power > 0
+        )
+
+    @staticmethod
+    def _score(
+        state: GameState, player: int, option: DeclareBlockers, lethal_incoming: bool
+    ) -> float:
+        value = 0.0
+        blocked_damage = 0
+        for blocker_id, attacker_id in option.blocks:
+            blocker = state.objects[blocker_id]
+            attacker = state.objects[attacker_id]
+
+            kills = blocker.has("Deathtouch") or blocker.power >= attacker.toughness
+            dies = attacker.has("Deathtouch") or attacker.power >= blocker.toughness
+
+            # Trample means the body absorbs only up to its toughness.
+            absorbed = (
+                min(attacker.power, blocker.toughness)
+                if attacker.has("Trample")
+                else attacker.power
+            )
+            blocked_damage += max(0, absorbed)
+
+            value += 2.0 if kills else 0.0
+            value -= 1.0 if dies else -1.0
+
+        if lethal_incoming:
+            # Staying alive dominates every trade consideration.
+            value += 10.0 * blocked_damage
+        return value

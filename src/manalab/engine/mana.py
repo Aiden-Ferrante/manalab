@@ -22,7 +22,7 @@ from manalab.cards.payment import Source, assign
 from manalab.engine.objects import GameObject
 from manalab.engine.state import GameState
 
-_MULTI_MANA = re.compile(r"add (?:\{[^}]+\}\s*){2,}", re.I)
+MULTI_MANA = re.compile(r"add (?:\{[^}]+\}\s*){2,}", re.I)
 
 
 @dataclass(frozen=True)
@@ -84,6 +84,6 @@ def unmodeled_sources(state: GameState, player: int | None = None) -> dict[str, 
     """Permanents whose mana production the engine gets wrong, by name."""
     out: dict[str, str] = {}
     for obj in state.battlefield(player):
-        if obj.card.taps_for_mana and _MULTI_MANA.search(obj.card.oracle_text):
+        if obj.card.taps_for_mana and MULTI_MANA.search(obj.card.oracle_text):
             out[obj.card.name] = "produces more than one mana; counted as one"
     return out

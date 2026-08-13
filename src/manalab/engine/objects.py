@@ -30,6 +30,13 @@ class GameObject:
 
     tapped: bool = False
     damage: int = 0
+    deathtouched: bool = False
+    """Has been dealt damage by a deathtouch source this turn (CR 704.5h).
+
+    Kept apart from `damage` because the amount is irrelevant — one point from a
+    deathtoucher is lethal to a 10/10, and folding that into the damage number
+    would make a 1/1's hit indistinguishable from a real ten points when
+    something later heals or pumps toughness."""
     counters: dict[str, int] = field(default_factory=dict)
     summoning_sick: bool = False
     """Set when a permanent enters the battlefield, cleared during its
@@ -83,6 +90,8 @@ class GameObject:
 
         Only meaningful for creatures on the battlefield; the caller checks that.
         """
+        if self.deathtouched and self.damage > 0:
+            return True
         return self.toughness <= 0 or self.damage >= self.toughness
 
     def has(self, keyword: str) -> bool:
