@@ -1,0 +1,22 @@
+// green, co-evolution round 2
+// Nash weight in the final metagame: 1.000
+
+3 Alpha Tyrranax
+2 Ankle Biter
+1 Bear Cub
+2 Boreal Druid
+4 Centaur Courser
+3 Colossadactyl
+4 Cylian Elf
+4 Elvish Mystic
+1 Fang of Shigeki
+1 Feral Krushok
+16 Forest
+3 Golden Hind
+3 Goobbue Gardener
+2 Kalonian Tusker
+3 Kessig Recluse
+3 Orochi Sustainer
+1 Stampeding Rhino
+3 Trained Armodon
+1 Yavimaya Wurm

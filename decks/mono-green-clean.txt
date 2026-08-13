@@ -1,0 +1,22 @@
+// mono-green, consolidated (v2)
+//
+// 0.557 against the five-deck cross-colour field,
+// weighted by how often each opponent is played (v1 scored 0.500).
+//
+// Every deathtouch creature also has reach. The evolved lists had no
+// reach at all because green's training gauntlet contains no fliers,
+// so the search could not tell Dragon Sniper from Ankle Biter.
+//
+// Both seats piloted by engine.agents.CurveAgent.
+
+3 Colossadactyl
+4 Deadly Recluse
+4 Dragon Sniper
+4 Elvish Mystic
+23 Forest
+4 Kalonian Tusker
+4 Kessig Recluse
+4 Leatherback Baloth
+4 Llanowar Elves
+4 Thornweald Archer
+2 Vulpine Goliath

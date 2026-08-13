@@ -1,0 +1,35 @@
+// mono-black, evolved
+//
+// Representative of 2 independent runs: this is the seed
+// closest to the mean (0.486 vs mean 0.457), not the
+// best one. Cross-colour win rate across seeds: 0.457 +/- 0.042.
+//
+// Both seats piloted by engine.agents.CurveAgent.
+
+4 Alley Strangler
+1 Cabal Evangel
+2 Catacomb Slug
+4 Cursed Minotaur
+1 Daggerdrome Imp
+1 Dark Deed
+1 Defile
+1 Dune Beetle
+1 Eviscerate
+3 Feast of Blood
+1 Footbottom Feast
+1 Forever Young
+4 Gifted Aetherborn
+1 Gurmag Swiftwing
+1 Hullcarver
+4 Impale
+1 Minotaur Abomination
+1 Mob
+2 Murderous Cut
+1 Nameless Inversion
+1 Pharika's Chosen
+3 Sugar Rush
+15 Swamp
+1 Two-Headed Zombie
+2 Vampire Nighthawk
+1 Warpath Ghoul
+1 Wring Flesh

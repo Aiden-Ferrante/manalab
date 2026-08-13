@@ -1,0 +1,29 @@
+// mono-red, evolved
+//
+// Representative of 2 independent runs: this is the seed
+// closest to the mean (0.461 vs mean 0.501), not the
+// best one. Cross-colour win rate across seeds: 0.501 +/- 0.057.
+//
+// Both seats piloted by engine.agents.CurveAgent.
+
+1 Anaba Bodyguard
+1 Call In a Professional
+3 Charging Monstrosaur
+1 Direct Current
+4 Earth Elemental
+4 Falkenrath Reaver
+1 Fomori Nomad
+1 Goblin Roughrider
+1 Guerrilla Tactics
+2 Hostile Minotaur
+1 Iron Myr
+4 Magmatic Insight
+16 Mountain
+2 Onakke Ogre
+1 Playful Shove
+4 Pyromantic Pilgrim
+2 Sarkhan's Rage
+3 Scorching Shot
+1 Slash Panther
+4 Viashino Spearhunter
+3 Volcanic Dragon

@@ -1,0 +1,22 @@
+// white, co-evolution round 4
+// Nash weight in the final metagame: 0.377
+
+3 Aerial Responder
+3 Ajani's Sunstriker
+3 Battlefield Raptor
+2 Brightblade Stoat
+1 Elite Vanguard
+3 Healer's Hawk
+1 Healing Hands
+3 Ironclad Krovod
+2 Kitesail Scout
+4 Knight of Meadowgrain
+2 Makindi Griffin
+2 Maned Serval
+1 Moment of Triumph
+17 Plains
+3 Porcelain Legionnaire
+2 Prized Griffin
+3 Show of Valor
+3 Silverbeak Griffin
+2 Warclamp Mastiff

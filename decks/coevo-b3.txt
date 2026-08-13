@@ -1,0 +1,24 @@
+// black, co-evolution round 3
+// Nash weight in the final metagame: 0.510
+
+1 Bane Alley Blackguard
+4 Blood Glutton
+3 Cursed Minotaur
+1 Giant Scorpion
+4 Gifted Aetherborn
+1 Hand of Silumgar
+1 Highborn Vampire
+4 Hullcarver
+1 Kelinore Bat
+1 Leaden Myr
+1 Monoist Sentry
+1 Moonglove Winnower
+1 Rotting Fensnake
+4 Snow-Covered Swamp
+1 Squirrelanoids
+16 Swamp
+2 Two-Headed Zombie
+4 Typhoid Rats
+1 Ukud Cobra
+4 Vampire Nighthawk
+4 Vampire of the Dire Moon

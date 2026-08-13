@@ -1,0 +1,29 @@
+// mono-blue, evolved
+//
+// Representative of 2 independent runs: this is the seed
+// closest to the mean (0.209 vs mean 0.292), not the
+// best one. Cross-colour win rate across seeds: 0.292 +/- 0.118.
+//
+// Both seats piloted by engine.agents.CurveAgent.
+
+4 Ancient Crab
+2 Bone to Ash
+3 Cloud Manta
+1 Coral Eel
+2 Counterspell
+2 Dream Fracture
+2 Fold into Aether
+16 Island
+1 Mahamoti Djinn
+2 Oko's Accomplices
+1 Radical Idea
+3 Remove Soul
+1 Ribbons of the Reikai
+2 Sea Eagle
+4 Seagraf Skaab
+3 Silver Myr
+1 Soaring Drake
+3 Sworn Guardian
+3 Triton Shorethief
+2 Wind Drake
+2 Wishcoin Crab

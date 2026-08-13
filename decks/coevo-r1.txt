@@ -1,0 +1,23 @@
+// red, co-evolution round 1
+// Nash weight in the final metagame: 0.369
+
+1 Breakneck Berserker
+3 Defiant Khenra
+1 Electrify
+1 Falkenrath Reaver
+1 Feral Maaka
+1 Fiery Finish
+3 Fire Prophecy
+4 Flame Slash
+2 Goblin Roughrider
+1 Hill Giant
+3 Hulking Bugbear
+1 Lightning Elemental
+3 Magmatic Insight
+19 Mountain
+4 Quaketusk Boar
+2 Rearing Embermare
+1 Snow-Covered Mountain
+3 Thunder Magic
+2 Thundering Giant
+4 Volcanic Spite

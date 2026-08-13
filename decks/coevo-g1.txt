@@ -1,0 +1,29 @@
+// green, co-evolution round 1
+// Nash weight in the final metagame: 0.331
+
+1 Broodhunter Wurm
+1 Brushstrider
+2 Colossadactyl
+4 Deadly Recluse
+1 Dragon Sniper
+1 Elfhame Wurm
+1 Elvish Mystic
+1 Fang of Shigeki
+20 Forest
+1 Hollowhenge Beast
+1 Jibbirik Omnivore
+4 Kalonian Tusker
+1 Leaf Gilder
+4 Leatherback Baloth
+1 Llanowar Elves
+1 Magnigoth Sentry
+1 Moss Viper
+2 Nessian Courser
+1 Ordinary Bear
+2 Quakestrider Ceratops
+1 Rumbling Baloth
+1 Sentinel Spider
+3 Snow-Covered Forest
+1 Spined Wurm
+2 Vigilant Baloth
+1 Vorstclaw

@@ -1,0 +1,26 @@
+// black, co-evolution round 1
+// Nash weight in the final metagame: 0.083
+
+1 Bogstomper
+1 Dark Nourishment
+2 Death's Caress
+3 Desperate Measures
+3 Douser of Lights
+4 Feast of Blood
+2 Fell
+1 Forever Young
+3 Gifted Aetherborn
+3 Highborn Vampire
+2 Hired Poisoner
+2 Hullcarver
+3 Kraul Raider
+1 Minotaur Abomination
+1 Moriok Reaver
+1 Murder
+1 Scrounger of Souls
+3 Snow-Covered Swamp
+2 Sugar Rush
+15 Swamp
+3 Typhoid Rats
+2 Vampire of the Dire Moon
+1 Witch's Familiar

@@ -1,0 +1,29 @@
+// green, co-evolution round 3
+// Nash weight in the final metagame: 0.092
+
+4 Ankle Biter
+1 Axebane Beast
+1 Axebane Stag
+1 Chelonian Tackle
+2 Colossal Dreadmaw
+2 Dragon Sniper
+1 Enormous Baloth
+1 Feral Krushok
+19 Forest
+1 Gnarled Mass
+1 Golden Hind
+4 Kalonian Tusker
+1 Leatherback Baloth
+1 Life Goes On
+1 Monstrous Growth
+1 Mosscoat Goriak
+1 Norwood Ranger
+1 Phytoburst
+1 Primordial Wurm
+3 Sedge Scorpion
+1 Snow-Covered Forest
+1 Tajuru Blightblade
+2 Thoughtweft Charge
+2 Trained Armodon
+4 Underdark Basilisk
+2 Vulpine Goliath

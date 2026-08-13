@@ -1,0 +1,24 @@
+// black, co-evolution round 2
+// Nash weight in the final metagame: 0.078
+
+3 Banehound
+2 Charity Extractor
+1 Desperate Measures
+1 Douser of Lights
+4 Dune Beetle
+3 Feast of Blood
+4 Gifted Aetherborn
+1 Hired Poisoner
+2 Mass of Ghouls
+2 Nameless Inversion
+1 Nether Horror
+1 Queen's Bay Soldier
+1 Rotting Mastodon
+4 Scrounger of Souls
+2 Sephiroth's Intervention
+4 Snow-Covered Swamp
+3 Sugar Rush
+16 Swamp
+1 Typhoid Rats
+2 Vampire Nighthawk
+2 Weed Strangle

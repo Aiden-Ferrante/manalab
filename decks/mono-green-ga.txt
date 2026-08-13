@@ -1,0 +1,28 @@
+// mono-green, evolved
+//
+// Representative of 2 independent runs: this is the seed
+// closest to the mean (0.549 vs mean 0.549), not the
+// best one. Cross-colour win rate across seeds: 0.549 +/- 0.001.
+//
+// Both seats piloted by engine.agents.CurveAgent.
+
+1 Aggressive Urge
+4 Ankle Biter
+3 Axebane Beast
+1 Blessing of Frost
+2 Cylian Elf
+3 Elvish Mystic
+2 Force of Savagery
+15 Forest
+1 Garruk's Gorehorn
+3 Gigantosaurus
+4 Growth Cycle
+4 Leatherback Baloth
+3 Magnigoth Sentry
+4 Monstrous Growth
+2 Nessian Courser
+1 Primordial Wurm
+1 Sedge Scorpion
+2 Snow-Covered Forest
+3 Tree Monkey
+1 Wary Okapi

@@ -1,0 +1,31 @@
+// mono-white, evolved
+//
+// Representative of 2 independent runs: this is the seed
+// closest to the mean (0.669 vs mean 0.646), not the
+// best one. Cross-colour win rate across seeds: 0.646 +/- 0.032.
+//
+// Both seats piloted by engine.agents.CurveAgent.
+
+4 Bastion Enforcer
+3 Brightblade Stoat
+1 Eagle of the Watch
+2 Ghirapur Osprey
+4 Glory Seeker
+1 Healer's Hawk
+1 Loxodon Convert
+3 Moment of Triumph
+2 Moorish Cavalry
+1 Nyxborn Courser
+16 Plains
+2 Rebellious Strike
+4 Rustwing Falcon
+2 Serra Angel
+1 Silverbeak Griffin
+1 Skyhunter Patrol
+2 Skyswirl Harrier
+1 Staunch Shieldmate
+2 Story Seeker
+1 Sunblade Angel
+4 Swooping Lookout
+1 Voiceless Spirit
+1 Wall of Swords
