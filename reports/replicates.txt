@@ -1,0 +1,27 @@
+  no sweepers    seed 0: white=0.611  blue=0.296  black=0.652  red=0.277  green=0.679  spread=0.402
+  no sweepers    seed 1: white=0.450  blue=0.233  black=0.755  red=0.444  green=0.601  spread=0.522
+  no sweepers    seed 2: white=0.614  blue=0.329  black=0.637  red=0.411  green=0.555  spread=0.309
+  no sweepers    seed 3: white=0.529  blue=0.180  black=0.745  red=0.397  green=0.653  spread=0.564
+  with sweepers  seed 0: white=0.603  blue=0.271  black=0.640  red=0.312  green=0.690  spread=0.418
+  with sweepers  seed 1: white=0.553  blue=0.291  black=0.655  red=0.315  green=0.663  spread=0.372
+  with sweepers  seed 2: white=0.659  blue=0.333  black=0.701  red=0.309  green=0.528  spread=0.392
+  with sweepers  seed 3: white=0.584  blue=0.166  black=0.758  red=0.384  green=0.631  spread=0.592
+
+==============================================================================
+REPLICATES — 4 seeds per condition, 22.4 min
+==============================================================================
+colour             no sweepers        with sweepers
+white          0.551 +/- 0.078      0.600 +/- 0.045
+blue           0.260 +/- 0.066      0.265 +/- 0.071
+black          0.697 +/- 0.061      0.689 +/- 0.053
+red            0.382 +/- 0.073      0.330 +/- 0.036
+green          0.622 +/- 0.055      0.628 +/- 0.071
+
+  spread  no sweepers    0.449 +/- 0.116   (seeds: 0.402, 0.522, 0.309, 0.564)
+  spread  with sweepers  0.444 +/- 0.101   (seeds: 0.418, 0.372, 0.392, 0.592)
+
+  difference in spread: -0.006
+  seed-to-seed noise:   0.116
+
+  The change is NOT larger than twice the seed noise.
+  The single-run result that motivated this was not evidence of an effect.

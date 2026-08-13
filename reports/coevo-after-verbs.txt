@@ -1,0 +1,135 @@
+co-evolving 5 colours over 5 rounds
+60,000 games per search, 18 workers
+
+  white   pool 187
+  blue    pool 122
+  black   pool 137
+  red     pool 151
+  green   pool 187
+
+==========================================================================
+ROUND 1
+==========================================================================
+  (no previous field to measure progress against)
+
+  Nash mixture over all 5 decks:
+     R1    0.479  ###################
+     G1    0.404  ################
+     B1    0.117  ####
+
+  intransitive triples (1):
+     B1 > G1 > R1 > B1
+
+==========================================================================
+ROUND 2
+==========================================================================
+  progress vs the previous round's field:
+     G2    0.527   held
+     W2    0.479   held
+     B2    0.431   REGRESSED
+     R2    0.415   REGRESSED
+     U2    0.301   REGRESSED
+
+  Nash mixture over all 10 decks:
+     R1    0.499  ###################
+     G2    0.223  ########
+     W1    0.190  #######
+     G1    0.040  #
+     W2    0.039  #
+     B1    0.009  
+
+  intransitive triples (6):
+     W1 > G2 > R1 > W1
+     B1 > G1 > R1 > B1
+     B1 > G2 > R1 > B1
+     R1 > W2 > G1 > R1
+     R1 > W2 > G2 > R1
+     G1 > B2 > W2 > G1
+
+==========================================================================
+ROUND 3
+==========================================================================
+  progress vs the previous round's field:
+     G3    0.529   held
+     W3    0.498   held
+     B3    0.481   held
+     R3    0.436   REGRESSED
+     U3    0.272   REGRESSED
+
+  Nash mixture over all 15 decks:
+     R1    0.487  ###################
+     B3    0.200  ########
+     G3    0.160  ######
+     G2    0.110  ####
+     W1    0.042  #
+
+  intransitive triples (12):
+     W1 > G2 > R1 > W1
+     W1 > B3 > B2 > W1
+     B1 > G1 > R1 > B1
+     B1 > G2 > R1 > B1
+     B1 > G3 > R1 > B1
+     R1 > W2 > G1 > R1
+
+==========================================================================
+ROUND 4
+==========================================================================
+  progress vs the previous round's field:
+     W4    0.561   improved
+     G4    0.488   held
+     B4    0.382   REGRESSED
+     R4    0.377   REGRESSED
+     U4    0.298   REGRESSED
+
+  Nash mixture over all 20 decks:
+     W4    0.387  ###############
+     R1    0.380  ###############
+     B2    0.083  ###
+     B1    0.078  ###
+     G3    0.072  ##
+
+  intransitive triples (41):
+     W1 > G2 > R1 > W1
+     W1 > B3 > B2 > W1
+     B1 > G1 > R1 > B1
+     B1 > G2 > R1 > B1
+     B1 > G3 > R1 > B1
+     B1 > W4 > R1 > B1
+
+==========================================================================
+ROUND 5
+==========================================================================
+  progress vs the previous round's field:
+     B5    0.451   held
+     W5    0.432   REGRESSED
+     G5    0.367   REGRESSED
+     R5    0.349   REGRESSED
+     U5    0.219   REGRESSED
+
+  Nash mixture over all 25 decks:
+     W4    0.377  ###############
+     R1    0.369  ##############
+     G3    0.092  ###
+     B1    0.083  ###
+     B2    0.078  ###
+
+  intransitive triples (51):
+     W1 > G2 > R1 > W1
+     W1 > B3 > B2 > W1
+     B1 > G1 > R1 > B1
+     B1 > G2 > R1 > B1
+     B1 > G3 > R1 > B1
+     B1 > W4 > R1 > B1
+
+==========================================================================
+FINAL
+==========================================================================
+25 decks built in 12.7 min
+
+  wrote coevo-b1.txt  (weight 0.083)
+  wrote coevo-r1.txt  (weight 0.369)
+  wrote coevo-b2.txt  (weight 0.078)
+  wrote coevo-g3.txt  (weight 0.092)
+  wrote coevo-w4.txt  (weight 0.377)
+
+colours surviving in the equilibrium: black, green, red, white

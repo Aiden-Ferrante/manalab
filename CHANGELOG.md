@@ -3,6 +3,167 @@
 All notable changes to manalab are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+Deckbuilding search closes the loop: a genetic algorithm scored by games the
+rules engine actually plays. The notebook
+`notebooks/genetic_deck_search.ipynb` runs it end to end with the numbers below.
+
+### Added
+
+- **Combat keywords** (`engine/combat.py`) — flying and reach gating blocks,
+  menace as a property of the whole assignment, trample spilling excess,
+  deathtouch as one-point-is-lethal, first and double strike as two damage
+  passes with state-based actions between them, and lifelink. 25 tests drive
+  the rules directly against hand-built boards rather than through a game.
+- **`engine/fidelity.py`** — the engine's account of its own blind spots, asked
+  of a card *before* a game. One source of truth for which keywords are real,
+  with a test that fails if the list claims one the engine never reads.
+- **`evaluate/match.py`** — `MatchEvaluator`: win rate against a fixed gauntlet,
+  draws at half a point, candidate alternating play and draw. Honours the
+  `Oracle`'s game-*i*-at-seed-*s+i* contract, so racing and halving can splice
+  extra precision onto a deck already measured.
+- **`evaluate/pool.py`, `evaluate/gauntlet.py`** — the mono-green pool split into
+  132 faithful cards and a labelled 3,064-card text tier, and five fixed
+  archetypes built only from the faithful tier.
+- **`search/genetic.py`** — tournament selection, uniform crossover over card
+  counts, mutation, and `repair` back onto the legal simplex. Budget in games;
+  elites re-measured on a fresh stream each generation rather than served a
+  cached lucky score.
+- **`Oracle.evaluate_many`** — the fitness fan-out across processes. Produces a
+  byte-identical trace to the serial path (there is a test); 150,000 games in
+  37s on 18 workers, 244 µs/game wall.
+
+### Fixed
+
+- **The defender could only ever declare one blocker.** `legal_blocks`
+  enumerated single (blocker, attacker) pairs, so a wide board was unanswerable
+  and "play the most creatures" won for reasons unrelated to Magic — precisely
+  the artifact a deck search would have found and reported as a discovery.
+  Assignments are now complete and multi-blocker, capped and reported when the
+  board is too wide to enumerate.
+- **Modal double-faced cards were admitted as faithful, textless 0-drops.**
+  `is_land` is true for a `Sorcery // Land` type line, and a faced card carries
+  blank top-level `oracle_text`, so every text check read "vanilla". Faced cards
+  are now refused before anything reads either field.
+- **`random_genome` smeared decks across the whole pool.** Twelve cards at four
+  copies hold 48, not 60, so `repair` scattered the shortfall uniformly — the
+  concentration the function existed to create was undone every call, and basic
+  lands were buried. The chosen set now grows until it can hold a full deck.
+
+### Changed
+
+- `ARCHITECTURE.md`'s "no win rates" non-goal narrowed rather than dropped: the
+  number exists now, and the caveat that it measures "beats this gauntlet under
+  this pilot" travels with it.
+
+- **`search/coevolve.py`** — populations that optimise against each other instead
+  of a fixture, built against the three ways naive co-evolution lies: a hall-of-
+  fame archive so opponents are sampled from every champion ever (forgetting),
+  explicit intransitive-triple detection (cycling), and progress scored against
+  the *previous* round's Nash mixture rather than the current champion (a moving
+  objective). Nash by fictitious play, not replicator dynamics — replicator
+  orbits forever on exactly the intransitive games this module exists to find.
+  All 22 tests run against hand-built matrices with no game involved, via an
+  `Arena` seam that keeps `search` free of game knowledge.
+- **`examples/evolve_all_colors.py`, `examples/coevolve_colors.py`** — the
+  five-colour ladder and the co-evolution tournament.
+- **Seven walkthrough notebooks** (`notebooks/cards/`, `notebooks/engine/`,
+  indexed in `notebooks/README.md`) — the card layer and the rules engine, hand
+  by hand, stored with their outputs. Every claim is demonstrated by a printed
+  result rather than asserted in prose, which is how one of them caught a broken
+  demo: the illegal-action check ran with five-card libraries, so both players
+  lost to drawing from an empty library before the agent was ever asked, and the
+  cell proved nothing while appearing to pass.
+- **Spells that do something** — `engine/targets.py` (a small target language,
+  legal-target enumeration, and CR 608.2b re-checking on resolution) and
+  `engine/resolve.py` (the verb dispatcher: `deal_damage`, `destroy`, `draw`,
+  `gain_life`, `pump`). Instants and sorceries had resolved doing nothing since
+  the engine existed.
+
+  Two rules that make the difference between working and looking like it works:
+  a card is refused **whole** if any verb or target on it is unsupported, because
+  half-resolving "destroy target creature and draw a card" produces a game that
+  looks legal; and a spell with no legal target **cannot be cast** (CR 601.2c),
+  because otherwise removal gets cast into an empty board and reads as a play
+  mistake rather than an engine bug.
+
+  The target language recognises four phrases and refuses 353 others by design.
+  `Doom Blade` is still refused — "target *nonblack* creature" is a restriction
+  the engine cannot enforce, and guessing would make illegal plays look legal.
+
+- **Counterspells** — a target kind for objects on the stack, and the
+  `counter_spell` verb. The stack and priority already existed, so a counter cast
+  in response really does resolve first and send its target to the graveyard
+  without resolving (CR 701.5a). `spell`, `creature spell` and `noncreature
+  spell` are understood; `spell unless its controller pays {N}` is refused,
+  because the pay-or-not decision has nowhere to live yet.
+- **Mass effects** — `destroy`/`deal_damage` over a whole board, as a *scope*
+  rather than a target: "destroy all creatures" chooses nothing (CR 115.10), so
+  it must not enumerate one castable option per creature. Mass `pump` is
+  deliberately refused: pump-as-counters is a bounded lie for one creature and a
+  permanent global anthem when applied to a board, which is a different card
+  rather than an approximation of one.
+
+### Fixed
+
+- **The crude pilot would destroy its own creatures.** The engine offers one
+  `CastSpell` per legal target and "target creature" includes your own board, so
+  `CurveAgent`'s "cast the most expensive thing" picked a target arbitrarily.
+  That is not an interestingly-bad play, it is a broken measuring instrument.
+- **Targets were nearly filed under a dead object id.** A card changing zones
+  becomes a new object (CR 400.7), so targets recorded against the card in hand
+  are lost the moment the spell reaches the stack — every removal spell would
+  have resolved untargeted, silently. Pinned by a test.
+- **A duplicate champion label silently corrupted co-evolution.** `black` and
+  `blue` both abbreviated to `B`; `score_against_mixture` treats a same-label
+  opponent as a mirror and scores it 0.5 without playing it, so the two colours
+  skipped each other's decks, one deck was written twice, and blue was reported
+  as surviving in an equilibrium it held zero weight in. `Archive.add` now
+  refuses duplicates, and the example uses Magic's own WUBRG codes.
+
+- **`search/report.py`** — phase 7, interpretation. Means with spread across
+  seeds, comparison against the standard error of the *difference*, and **tiers
+  instead of rankings**: results the noise cannot separate are printed together
+  rather than in an order. `examples/evolve_all_colors.py` now replicates by
+  default (`--seeds 4`), and `--seeds 1` warns that it is producing a number with
+  no error bar. The deck written per colour is the run *nearest the mean*, not
+  the best — shipping the best run is the winner's curse in file form.
+- **`examples/replicate_colors.py`** — paired A/B of two gauntlet configurations
+  across seeds, reporting whether a difference exceeds the seed noise.
+
+### Measured
+
+- **Single-run tournament results were noise, and were reported as findings.**
+  The five-colour spread was rerun after each engine change and narrated as a
+  causal story — verbs opened the metagame, removal opened it further, sweepers
+  closed it. The reported sequence was 0.538 → 0.527 → 0.412 → 0.379 → 0.609,
+  steps of ≤0.13. Replication at 4 seeds per condition measured seed-to-seed
+  noise at **±0.116** and the sweeper effect at **−0.006**. Every step was inside
+  the noise. What survives replication: **black strongest (0.69 ± 0.06)**,
+  **blue weakest (0.26 ± 0.07)**; the middle three are not ordered by the data.
+  The engine work is unaffected — it is verified by unit tests against hand-built
+  boards, not by tournament outcomes.
+- Winner's curse on the champion: **0.980 in-sample → 0.841 held out** on 3,000
+  fresh games from a disjoint stream.
+- **Faithful pool by colour**: white 151, green 131, red 88, black 80, blue 63 —
+  out of ~3,200 each. Every colour loses 730–960 instants and sorceries to the
+  inert pile, so each arrives at the table stripped to its creatures.
+- **The five champions, head to head**: black 0.778 > green 0.679 > white 0.448 >
+  red 0.408 > blue 0.240. Black wins on twenty deathtouch creatures — a 1/1
+  deathtoucher eats any body green can build, and no removal exists to break the
+  wall. Partly legitimate (deathtouch really does answer big creatures; Vampire
+  Nighthawk and Gifted Aetherborn are real cards) and partly artifact (everything
+  that would punish it is an instant that resolves doing nothing). A 0.538 spread
+  is the engine talking, not the colour pie.
+- Generalisation: champion **0.871** against a *held-out* gauntlet of three
+  archetypes the search never saw, versus **0.749** for the best hand-built
+  gauntlet deck — so the search is not merely angled at its training opponents.
+- Initialisation dominates operators at this budget: cold start reaches **0.749**
+  held out, seeding 25% of the population from a hand-built deck reaches
+  **0.837**, and the hand-built start deck itself scores **0.780**. A cold start
+  spends its budget rediscovering that lands exist.
+
 ## [0.2.0] — 2026-08-11
 
 One day, two arcs — the card database made exact, and the deck-search ladder.

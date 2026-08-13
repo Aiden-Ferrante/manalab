@@ -1,0 +1,111 @@
+co-evolving 5 colours over 5 rounds
+60,000 games per search, 18 workers
+
+  white   pool 151
+  blue    pool  63
+  black   pool  80
+  red     pool  88
+  green   pool 131
+
+==========================================================================
+ROUND 1
+==========================================================================
+  (no previous field to measure progress against)
+
+  Nash mixture over all 5 decks:
+     G1    1.000  #######################################
+
+  no cycles — the field is a ladder, not a metagame
+
+==========================================================================
+ROUND 2
+==========================================================================
+  progress vs the previous round's field:
+     B2    0.589   improved
+     G2    0.438   REGRESSED
+     W2    0.258   REGRESSED
+     R2    0.148   REGRESSED
+     U2    0.082   REGRESSED
+
+  Nash mixture over all 10 decks:
+     B2    1.000  #######################################
+
+  intransitive triples (2):
+     W1 > U2 > U1 > W1
+     W1 > R2 > U1 > W1
+
+==========================================================================
+ROUND 3
+==========================================================================
+  progress vs the previous round's field:
+     B3    0.527   held
+     W3    0.391   REGRESSED
+     G3    0.206   REGRESSED
+     R3    0.163   REGRESSED
+     U3    0.093   REGRESSED
+
+  Nash mixture over all 15 decks:
+     B3    1.000  #######################################
+
+  intransitive triples (4):
+     W1 > U2 > U1 > W1
+     W1 > R2 > U1 > W1
+     W1 > U3 > U1 > W1
+     W1 > R3 > U1 > W1
+
+==========================================================================
+ROUND 4
+==========================================================================
+  progress vs the previous round's field:
+     W4    0.586   improved
+     R4    0.300   REGRESSED
+     B4    0.287   REGRESSED
+     G4    0.261   REGRESSED
+     U4    0.065   REGRESSED
+
+  Nash mixture over all 20 decks:
+     B3    0.512  ####################
+     G1    0.332  #############
+     W4    0.157  ######
+
+  intransitive triples (7):
+     W1 > U2 > U1 > W1
+     W1 > R2 > U1 > W1
+     W1 > U3 > U1 > W1
+     W1 > R3 > U1 > W1
+     W1 > R4 > U1 > W1
+     G1 > W4 > B2 > G1
+
+==========================================================================
+ROUND 5
+==========================================================================
+  progress vs the previous round's field:
+     B5    0.368   REGRESSED
+     W5    0.355   REGRESSED
+     G5    0.333   REGRESSED
+     R5    0.258   REGRESSED
+     U5    0.088   REGRESSED
+
+  Nash mixture over all 25 decks:
+     B3    0.510  ####################
+     G1    0.331  #############
+     W4    0.158  ######
+
+  intransitive triples (16):
+     W1 > U2 > U1 > W1
+     W1 > R2 > U1 > W1
+     W1 > U3 > U1 > W1
+     W1 > R3 > U1 > W1
+     W1 > R4 > U1 > W1
+     W1 > R5 > U1 > W1
+
+==========================================================================
+FINAL
+==========================================================================
+25 decks built in 11.9 min
+
+  wrote coevo-g1.txt  (weight 0.331)
+  wrote coevo-b3.txt  (weight 0.510)
+  wrote coevo-w4.txt  (weight 0.158)
+
+colours surviving in the equilibrium: black, green, white

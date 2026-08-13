@@ -1,0 +1,28 @@
+==============================================================================
+STAGE 1 — each colour optimised against its own gauntlet
+==============================================================================
+  white   pool 187  |  vs own gauntlet: in-sample 1.000, held out 0.910  (44s)
+  blue    pool 122  |  vs own gauntlet: in-sample 0.960, held out 0.849  (68s)
+  black   pool 137  |  vs own gauntlet: in-sample 0.990, held out 0.918  (51s)
+  red     pool 151  |  vs own gauntlet: in-sample 0.910, held out 0.691  (40s)
+  green   pool 187  |  vs own gauntlet: in-sample 0.940, held out 0.822  (36s)
+
+==============================================================================
+STAGE 2 — the champions play each other
+==============================================================================
+NOTE: cross-colour results are confounded. Every colour is stripped to
+its vanilla creatures here, which flatters green by construction.
+
+            white    blue   black     red   green   overall
+white        --     0.836   0.505   0.819   0.516     0.669
+blue        0.169    --     0.138   0.543   0.185     0.259
+black       0.497   0.847    --     0.871   0.814     0.757
+red         0.153   0.461   0.137    --     0.171     0.231
+green       0.453   0.797   0.209   0.807    --       0.567
+
+ranking: black 0.757  >  white 0.669  >  green 0.567  >  blue 0.259  >  red 0.231
+spread:  0.527 between best and worst colour
+
+A spread this wide is the engine talking, not the colour pie.
+Implementing damage/destroy/draw verbs is what makes this table mean
+something — see pool.gaps() for the ranked list.

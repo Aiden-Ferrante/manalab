@@ -85,6 +85,25 @@ it only works if seeding is total.
 - Playing Magic against a human. This is a batch research tool.
 - Rules correctness in v1. The sim's assumptions are documented in
   `game/goldfish.py`; unmodeled cards are reported, never silently approximated.
-- Win rates in v1. The abstract sim has no opponent, so it measures consistency
-  and clock, not "does this deck win". Optimizing a proxy you can defend beats
-  optimizing a win rate against a weak AI.
+- **Win rate as the headline number.** This was once "no win rates at all",
+  because the goldfish model has no opponent. The engine does, so
+  `evaluate.match` now measures win rate against a fixed gauntlet — but the
+  original objection survives intact in a narrower form: both seats are piloted
+  by a crude agent, so the number measures "beats this gauntlet under this
+  pilot", not deck strength. It is reported with that caveat attached or it is
+  not reported. Optimizing a proxy you can defend still beats optimizing a win
+  rate you cannot.
+
+## Knowing what the model cannot represent
+
+`engine.fidelity` is the engine's account of its own blind spots, asked of a card
+*before* a game rather than reported after. It exists because a search that
+optimizes over cards whose text is silently ignored produces a confident wrong
+answer, and because the alternative — keeping the list of implemented keywords
+anywhere outside the engine — guarantees two copies that drift.
+
+`evaluate.pool` uses it to split a card pool into a **faithful** tier, which
+search may treat as real, and a **text** tier, which is kept and labelled so it
+is visible what the engine is throwing away. This is why the pool builder lives
+in `evaluate` and not in `cards`: it needs both the card data and the engine's
+self-knowledge, and `cards` may not import `engine`.
