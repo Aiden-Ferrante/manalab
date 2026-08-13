@@ -14,12 +14,12 @@ benchmark is what says which one is right.
 Phase status:
   0. harness ....................... this module, `oracle`, `trace`, `budget`, `store`
   1. ground truth and baselines .... `baselines`, `problems`
-  2. variance reduction ............ not started
+  2. variance reduction ............ CRN by default in `oracle`
   3. budget allocation ............. not started
-  4. search strategies ............. not started
-  5. objectives .................... `objective` (scalar only so far)
-  6. statistical validity .......... not started
-  7. interpretation ................ not started
+  4. search strategies ............. `genetic` (the honest baseline)
+  5. objectives .................... `objective`; `WIN_RATE` needs `evaluate.match`
+  6. statistical validity .......... held-out streams exist, not yet systematic
+  7. interpretation ................ `report` — replication, tiers, no false orderings
 """
 
 from manalab.search.budget import BudgetExceeded, BudgetMeter

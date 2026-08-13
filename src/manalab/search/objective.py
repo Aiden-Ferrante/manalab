@@ -74,6 +74,17 @@ class LinearObjective:
 
 
 CONSISTENCY = LinearObjective({"p_on_curve_t4": 1.0}, name="consistency_t4")
+WIN_RATE = LinearObjective({"win_rate": 1.0}, name="win_rate")
+"""Games won against a fixed gauntlet, half credit for a draw.
+
+The first objective that is not a proxy — and therefore the first one whose
+failure mode is not "we optimised the wrong quantity" but "we optimised the
+right quantity against the wrong opponents". Requires `evaluate.match`.
+
+It is only as meaningful as the agent piloting both seats. A deck that beats
+this gauntlet beats `CurveAgent` holding these cards, which is a strictly weaker
+claim than being a good deck, and the distance between the two is unmeasured.
+"""
 THROUGHPUT = LinearObjective({"mana_spent": 1.0}, name="throughput")
 """Total mana converted into spells across the game — the objective with teeth.
 
