@@ -84,7 +84,9 @@ class Game:
 
         winner = sba.winner(self.state)
         if winner is not None:
-            reason = self.state.players[1 - winner].loss_reason or "opponent lost"
+            losers = [p for p in self.state.players if p.index != winner]
+            reason = next((p.loss_reason for p in losers if p.loss_reason),
+                          "opponents lost")
         elif sba.game_over(self.state):
             reason = "all players lost"
         else:
@@ -273,7 +275,7 @@ class Game:
         if not isinstance(choice, A.DeclareAttackers):
             raise ValueError("expected an attack declaration")
 
-        defender = (active + 1) % len(state.players)
+        defender = choice.defender
         for obj_id in choice.attackers:
             attacker = state.objects[obj_id]
             attacker.attacking = defender
@@ -283,25 +285,36 @@ class Game:
             state.log.append(f"attacks: {[state.objects[i].card.name for i in choice.attackers]}")
 
     def _declare_blockers(self) -> None:
+        """Each attacked player declares blocks, with their own creatures.
+
+        The defender used to be "the next player round the table", which is only
+        the right answer at two. A player who is not being attacked does not
+        block, and a player who is blocks with what they control — so this is
+        driven by `attacking`, which already records who each attacker chose.
+        """
         state = self.state
-        attackers = [o.id for o in self._attackers()]
-        defender = (state.active_player + 1) % len(state.players)
+        by_defender: dict[int, list[int]] = {}
+        for obj in self._attackers():
+            by_defender.setdefault(obj.attacking, []).append(obj.id)
 
-        options, truncated = A.legal_blocks(state, defender, attackers)
-        if truncated:
-            self.unmodeled.setdefault(
-                "<block enumeration>",
-                "board too wide to enumerate every block; weakest blockers held back",
-            )
-        choice = self.agents[defender].act(state, defender, options)
-        if not isinstance(choice, A.DeclareBlockers):
-            raise ValueError("expected a block declaration")
+        for defender, attackers in sorted(by_defender.items()):
+            if state.players[defender].has_lost:
+                continue
+            options, truncated = A.legal_blocks(state, defender, attackers)
+            if truncated:
+                self.unmodeled.setdefault(
+                    "<block enumeration>",
+                    "board too wide to enumerate every block; weakest blockers held back",
+                )
+            choice = self.agents[defender].act(state, defender, options)
+            if not isinstance(choice, A.DeclareBlockers):
+                raise ValueError("expected a block declaration")
 
-        for blocker_id, attacker_id in choice.blocks:
-            blocker = state.objects[blocker_id]
-            attacker = state.objects[attacker_id]
-            blocker.blocking = attacker_id
-            attacker.blocked_by = attacker.blocked_by + (blocker_id,)
+            for blocker_id, attacker_id in choice.blocks:
+                blocker = state.objects[blocker_id]
+                attacker = state.objects[attacker_id]
+                blocker.blocking = attacker_id
+                attacker.blocked_by = attacker.blocked_by + (blocker_id,)
 
     def _combat_damage(self) -> None:
         """Combat damage, as a first-strike pass followed by a regular one.

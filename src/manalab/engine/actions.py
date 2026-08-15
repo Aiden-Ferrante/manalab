@@ -59,12 +59,19 @@ class CastSpell(Action):
 @dataclass(frozen=True)
 class DeclareAttackers(Action):
     attackers: tuple[int, ...] = ()
+    defender: int | None = None
+    """Which player is being attacked. `None` only for an empty declaration.
+
+    Two-player Magic never needed this — there was one opponent and the engine
+    assumed them. With three or more it is a real choice, and the one that
+    decides most Commander games.
+    """
 
     def describe(self, state: GameState) -> str:
         if not self.attackers:
             return "attack with nothing"
         names = ", ".join(state.objects[i].card.name for i in self.attackers)
-        return f"attack with {names}"
+        return f"attack P{self.defender} with {names}"
 
 
 @dataclass(frozen=True)
@@ -172,7 +179,9 @@ def legal_attacks(state: GameState, player: int) -> list[DeclareAttackers]:
     possible.
     """
     able = [obj for obj in state.creatures(player) if obj.can_attack]
-    if not able:
+    opponents = [p.index for p in state.players
+                 if p.index != player and not p.has_lost]
+    if not able or not opponents:
         return [DeclareAttackers(())]
 
     # Strongest first, so that a truncated enumeration keeps the choices that
@@ -183,12 +192,19 @@ def legal_attacks(state: GameState, player: int) -> list[DeclareAttackers]:
     free = [o.id for o in able[:width]]
     forced = tuple(o.id for o in able[width:])
 
+    # Each subset is offered against each opponent, rather than every way of
+    # splitting the team across several. That is N options per subset instead of
+    # N^k, and it is a real restriction: an attack cannot be divided between two
+    # opponents. Documented rather than hidden — `blocks_truncated` sets the
+    # precedent that a narrowed choice is reported, never silently taken.
     subsets: list[DeclareAttackers] = []
     for mask in range(1 << len(free)):
         chosen = tuple(free[i] for i in range(len(free)) if mask & (1 << i))
-        subsets.append(DeclareAttackers(chosen + forced if chosen else chosen))
-    if forced:
-        subsets.append(DeclareAttackers(()))
+        if not chosen:
+            continue
+        for defender in opponents:
+            subsets.append(DeclareAttackers(chosen + forced, defender))
+    subsets.append(DeclareAttackers(()))
     return subsets
 
 
