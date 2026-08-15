@@ -20,6 +20,7 @@ import re
 from dataclasses import dataclass
 
 import manalab.engine.resolve as resolve
+import manalab.engine.triggers as triggers
 from manalab.cards.model import Card
 from manalab.engine.mana import MULTI_MANA
 
@@ -63,7 +64,7 @@ class Fidelity:
         return self.faithful
 
 
-def _residual_text(card: Card) -> str:
+def _residual_text(card: Card, skip: frozenset[str] = frozenset()) -> str:
     """Oracle text with reminder text and bare keyword lines removed.
 
     What is left is text the engine would have to *do* something about. A
@@ -83,6 +84,8 @@ def _residual_text(card: Card) -> str:
         parts = [p.strip().lower() for p in re.split(r"[;,]", line) if p.strip()]
         if parts and all(p in COMBAT_KEYWORDS for p in parts):
             continue
+        if line.strip().lower() in skip:
+            continue        # a triggered ability the engine executes in full
         kept.append(line)
 
     return " ".join(kept).strip()
@@ -142,10 +145,38 @@ def assess(card: Card) -> Fidelity:
     if unknown:
         reasons.append("unimplemented keywords: " + ", ".join(sorted(unknown)))
 
-    if _residual_text(card):
+    # A trigger the engine can honour is no longer "text it does not execute".
+    # Anything it cannot recognise is still refused by name, which is what keeps
+    # a half-understood trigger out of a search pool.
+    reasons.extend(triggers.unsupported(card))
+
+    if _residual_text(card, skip=_handled_lines(card)):
         reasons.append("rules text the engine does not execute")
 
     return Fidelity(card.name, tuple(reasons))
+
+
+def _handled_lines(card: Card) -> frozenset[str]:
+    """Printed lines that are triggered abilities this engine fully executes.
+
+    "Fully" is strict on purpose. The ability must parse completely, every verb
+    must be one `resolve` implements, and none of its effects may need a target —
+    a triggered ability has no announcement step here yet, so there is nowhere for
+    a target to be chosen. Loosening any of those admits a card whose trigger
+    fires and quietly does the wrong thing, which is the failure this whole layer
+    exists to prevent.
+    """
+    handled: set[str] = set()
+    for _, ability in triggers.watched_by(card):
+        if ability.unparsed or not ability.effects:
+            continue
+        if any(e.verb not in resolve.IMPLEMENTED for e in ability.effects):
+            continue
+        if any(e.get("target") for e in ability.effects):
+            continue
+        if ability.text:
+            handled.add(ability.text.strip().lower())
+    return frozenset(handled)
 
 
 def faithful(card: Card) -> bool:

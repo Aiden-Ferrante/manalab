@@ -121,6 +121,38 @@ def apply(
     plan = plan_for(spell.card)
     if plan is None:  # pragma: no cover - the caller checks first
         return
+    _run(state, spell, plan, chosen, log)
+
+
+def apply_effects(
+    state: GameState,
+    source: GameObject,
+    effects: Sequence[Effect],
+    chosen: Sequence[T.Target],
+    log: list[str],
+) -> None:
+    """Resolve an explicit list of effects — a triggered ability's, not a card's.
+
+    `apply` plans from `card.effects`, which is every effect the card has. A
+    trigger owns only its own, so resolving one through `apply` would fire the
+    whole card each time it entered.
+    """
+    pairs = []
+    for effect in effects:
+        spec = T.parse(effect.get("target"))
+        if spec is None:      # refused upstream by fidelity; belt and braces
+            return
+        pairs.append((effect, spec))
+    _run(state, source, Plan(tuple(pairs)), chosen, log)
+
+
+def _run(
+    state: GameState,
+    spell: GameObject,
+    plan: "Plan",
+    chosen: Sequence[T.Target],
+    log: list[str],
+) -> None:
 
     controller = spell.controller
     queue = list(chosen)

@@ -22,7 +22,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Iterable, Sequence
 
-from manalab.cards.model import Card, Effect
+from manalab.cards.model import Ability, Card, Effect
 
 # --- text normalisation -------------------------------------------------
 
@@ -218,21 +218,6 @@ PATTERNS: tuple[Pattern, ...] = (
 _ACTIVATED = re.compile(r"^([^:]{1,60}):\s*(.+)$", re.S)
 _TRIGGERED = re.compile(r"^(when(?:ever)?|at)\b([^,]*),\s*(.+)$", re.I | re.S)
 _CLAUSE_SPLIT = re.compile(r"(?<=[.;])\s+")
-
-
-@dataclass(frozen=True)
-class Ability:
-    kind: str
-    """`spell`, `activated`, `triggered`, `static`, or `keyword`."""
-    text: str
-    effects: tuple[Effect, ...] = ()
-    unparsed: tuple[str, ...] = ()
-    cost: str = ""
-    trigger: str = ""
-
-    @property
-    def fully_parsed(self) -> bool:
-        return not self.unparsed
 
 
 @dataclass(frozen=True)
@@ -450,7 +435,8 @@ def with_effects(card: Card) -> Card:
     from dataclasses import replace
 
     parsed = parse_card(card)
-    return replace(card, effects=parsed.effects, unparsed=tuple(parsed.unparsed))
+    return replace(card, effects=parsed.effects, abilities=parsed.abilities,
+                   unparsed=tuple(parsed.unparsed))
 
 
 # --- coverage reporting -------------------------------------------------

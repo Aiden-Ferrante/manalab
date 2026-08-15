@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Mapping
 
-from manalab.cards.model import Card
+from manalab.cards.model import Ability, Card
 from manalab.engine.zones import Zone
 
 
@@ -55,6 +55,13 @@ class GameObject:
     unless it has haste."""
     attached_to: int | None = None
     face_down: bool = False
+    trigger: Ability | None = None
+    """Set when this stack entry is a triggered ability rather than a card.
+
+    A triggered ability on the stack is its own object (CR 113.7a): it is not
+    the permanent, and when it resolves the permanent stays where it is. It
+    carries the source card so the effect can name it, and this field so
+    resolution knows not to put a creature onto the battlefield twice."""
 
     attacking: int | None = None
     """Player being attacked, while this creature is an attacker."""

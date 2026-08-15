@@ -11,6 +11,36 @@ rules engine actually plays. The notebook
 
 ### Added
 
+- **`engine/triggers.py` — triggered abilities, and the events they watch.**
+  Magic's commonest ability shape is "when something happens, do this" — 14,481
+  triggered abilities in the corpus against roughly 18,000 activated-or-spell
+  ones — and the engine had no notion of an event at all. A creature with an
+  enters-the-battlefield trigger resolved onto the battlefield and did nothing,
+  silently, forever.
+
+  `state.move` is the single choke point every zone change passes through, so
+  events are recorded there; `_collect_triggers` puts them on the stack after
+  state-based actions and before anyone acts (CR 117.5), so a trigger is a real
+  object that can be responded to. It resolves and ceases to exist — the
+  permanent stays put, which needed `state.cease`, because `move` would have put
+  a second copy of the source card in a graveyard.
+
+  Scope is the self-referential enters/dies family: ~3,992 + ~481 abilities,
+  over a quarter of every trigger printed. Everything else is **refused by name**
+  — upkeep, attack, combat-damage and the "another permanent you control" family
+  all make their card unfaithful rather than being ignored.
+
+  This also required `Card` to carry `abilities`, not just flattened `effects`.
+  The parser always knew a draw was a trigger; `Parsed.effects` flattened it away
+  and `Card` only carried the flattened view, so by the time the engine saw a
+  card the difference was gone. Same information-loss shape as `unparsed`.
+
+  **Pool effect: mono-green Commander 233 → 270 faithful cards.** Modest on
+  purpose — the spine is built, but most triggers' *effects* use verbs that do
+  not exist yet (`search_library`, `create_token`, `grant_ability`), so Craterhoof
+  Behemoth, Sakura-Tribe Elder and Eternal Witness are all still refused. The
+  verbs are what convert this, and they are next.
+
 - **`cards/formats.py` — constructed formats as first-class objects.** "The
   format" used to be the string `"modern"` threaded through `mono_color`, with
   the construction rules scattered as constants: 60 in `pool.partition`, a

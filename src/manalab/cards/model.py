@@ -31,6 +31,34 @@ class Effect:
 
 
 @dataclass(frozen=True)
+class Ability:
+    """One ability, with the *shape* that tells you when it happens.
+
+    An `Effect` says what a card does. It cannot say when, and "draw a card" and
+    "when this creature enters, draw a card" are different cards. The parser has
+    always known the difference — it records `kind` and the trigger condition —
+    but `Parsed.effects` flattened every ability into one tuple and `Card` only
+    ever carried that tuple, so by the time the engine saw a card the difference
+    was gone. Everything downstream then had to assume "spell", which is why
+    permanents resolved to the battlefield doing nothing at all.
+
+    `kind` is one of `spell`, `activated`, `triggered`, `static`, `keyword`.
+    """
+
+    kind: str
+    text: str = ""
+    effects: tuple[Effect, ...] = ()
+    unparsed: tuple[str, ...] = ()
+    cost: str = ""
+    trigger: str = ""
+    """The condition, as printed: "this creature enters", "CARDNAME dies"."""
+
+    @property
+    def fully_parsed(self) -> bool:
+        return not self.unparsed
+
+
+@dataclass(frozen=True)
 class Face:
     """One printed side. Most cards have exactly one.
 
@@ -94,6 +122,13 @@ class Card:
     enters_tapped: bool = False
     oracle_text: str = ""
     effects: tuple[Effect, ...] = ()
+    abilities: tuple[Ability, ...] = ()
+    """The same effects, still attached to the ability that owns them.
+
+    `effects` is the flattened view every existing caller uses; this is the one
+    that can answer "is that draw a spell or an enters-the-battlefield trigger?"
+    Both are carried because flattening is lossy and nothing should have to
+    re-parse a card to recover what the parser already knew."""
     unparsed: tuple[str, ...] = ()
     """Clauses the parser could not match to a verb.
 

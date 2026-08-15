@@ -22,6 +22,7 @@ import manalab.engine.combat as combat
 import manalab.engine.mana as mana
 import manalab.engine.resolve as resolve
 import manalab.engine.sba as sba
+import manalab.engine.triggers as triggers
 from manalab.engine.agents import Agent
 from manalab.engine.objects import GameObject
 from manalab.engine.state import GameState
@@ -163,6 +164,10 @@ class Game:
             sba.check(state)
             if sba.game_over(state):
                 return
+            # CR 117.5: triggers that have waited since the last priority go
+            # on the stack now, after state-based actions and before anyone
+            # acts — so they can be responded to, like any other object.
+            self._collect_triggers()
 
             stack = state.zone(Zone.STACK)
             if state.players[player].has_lost:
@@ -192,6 +197,24 @@ class Game:
                     return
         raise RuntimeError(f"priority did not terminate in {step}")
 
+    def _collect_triggers(self) -> None:
+        """Put every ability watching a recent event onto the stack."""
+        state = self.state
+        if not state.events:
+            return
+        pending, state.events = state.events, []
+
+        for event in pending:
+            source = state.objects.get(event.object_id)
+            if source is None:
+                continue        # it moved again before triggers were collected
+            for ability in triggers.fired_by(source.card, event.kind):
+                entry = state.create(source.card, owner=source.owner,
+                                     zone=Zone.STACK, controller=event.controller)
+                entry.trigger = ability
+                state.log.append(
+                    f"trigger: {source.card.name} ({event.kind.value})")
+
     def _apply(self, player: int, action: A.Action) -> None:
         state = self.state
         if isinstance(action, A.PlayLand):
@@ -214,6 +237,14 @@ class Game:
         state = self.state
         stack = state.zone(Zone.STACK)
         top = stack[-1]
+
+        if top.trigger is not None:
+            # A triggered ability is its own object: it resolves, does its
+            # thing, and ceases to exist. The permanent that made it stays
+            # exactly where it is.
+            resolve.apply_effects(state, top, top.trigger.effects, (), state.log)
+            state.cease(top)
+            return
 
         if top.card.is_permanent:
             state.move(top, Zone.BATTLEFIELD, controller=top.controller)
