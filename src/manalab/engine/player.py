@@ -19,6 +19,14 @@ class Player:
     land_drops: int = 1
     """Per turn. A field rather than a constant because Exploration exists."""
 
+    mana_pool: dict[str, int] = field(default_factory=dict)
+    """Floating mana, by colour ('C' for colourless).
+
+    The engine had no pool at all: mana was worked out by tapping permanents at
+    payment time, which is enough for "can I cast this" and has nowhere to put
+    the mana a ritual makes. Empties at the end of every step and phase
+    (CR 500.4), which is what stops it being a bank account."""
+
     commander_casts: int = 0
     """How many times this player has cast their commander from the command
     zone. Each one makes the next cost {2} more (CR 903.8)."""

@@ -33,7 +33,7 @@ from manalab.engine.zones import Zone
 IMPLEMENTED = frozenset(
     {"deal_damage", "destroy", "draw", "gain_life", "pump", "counter_spell",
      "put_counters", "shuffle", "search_library", "reveal",
-     "create_token", "grant_ability"}
+     "create_token", "grant_ability", "add_mana"}
 )
 
 COUNTER_KINDS = frozenset({"+1/+1", "-1/-1"})
@@ -124,6 +124,27 @@ def _token_card(effect: Effect) -> Card | None:
         oracle_text="",
     )
 
+_MANA_SYMBOLS = re.compile(r"\{([wubrgc])\}", re.I)
+
+
+def _mana_added(effect: Effect) -> dict[str, int] | None:
+    """The mana an `add_mana` effect makes, or None to refuse it.
+
+    Only plain colour symbols. "{G}{G}" is three characters of unambiguous
+    meaning; "one mana of any color" and "{C} for each creature you control" are
+    choices and counts this has nowhere to make.
+    """
+    raw = str(effect.get("mana", "")).strip()
+    symbols = _MANA_SYMBOLS.findall(raw)
+    if not symbols or _MANA_SYMBOLS.sub("", raw).strip():
+        return None
+    out: dict[str, int] = {}
+    for symbol in symbols:
+        key = symbol.upper()
+        out[key] = out.get(key, 0) + 1
+    return out
+
+
 MASS_VERBS = frozenset({"deal_damage", "destroy"})
 """Verbs that may apply to a whole board.
 
@@ -170,6 +191,8 @@ def unsupported(card: Card) -> tuple[str, ...]:
             # anthem that also buffs the opponent, which is not an approximation
             # of the card, it is a different card.
             reasons.append(f"{effect.verb} over a whole board needs a duration model")
+        if effect.verb == "add_mana" and _mana_added(effect) is None:
+            reasons.append(f"mana not understood: {effect.get('mana')!r}")
         if effect.verb == "grant_ability":
             granted = str(effect.get("ability", "")).strip().lower()
             if granted not in COMBAT_KEYWORDS:
@@ -396,6 +419,15 @@ def _apply_one(
         # The shuffle happens whether or not anything was found — failing to find
         # is a legal outcome and still shuffles.
         state.shuffle(controller)
+
+    elif verb == "add_mana":
+        added = _mana_added(effect)
+        if added is None:  # pragma: no cover - unsupported() refuses these first
+            return
+        pool = state.players[controller].mana_pool
+        for color, count in added.items():
+            pool[color] = pool.get(color, 0) + count
+        log.append(f"{name}: adds {added} to P{controller}'s pool")
 
     elif verb == "grant_ability":
         if target is None or target.is_player:

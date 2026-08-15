@@ -114,6 +114,11 @@ class Game:
             self._turn_based_action(step)
             if step not in NO_PRIORITY and not self._combat_skipped(step):
                 self._priority(step)
+            # CR 500.4: mana empties at the end of every step and phase.
+            # Without this the pool is a bank account and a ritual cast on
+            # turn one pays for a spell on turn six.
+            for player in state.players:
+                player.mana_pool.clear()
 
     def _combat_skipped(self, step: Step) -> bool:
         """No attackers means no blockers and no combat damage (CR 508.1e)."""

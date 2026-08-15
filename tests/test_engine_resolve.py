@@ -569,3 +569,67 @@ def test_granting_a_keyword_the_engine_does_not_implement_is_refused() -> None:
                 effects=(Effect("grant_ability", (("ability", "hexproof"),
                                                   ("target", "target creature"))),))
     assert any("cannot grant" in r for r in resolve.unsupported(card))
+
+
+# --- floating mana -------------------------------------------------------
+
+
+def _ritual(mana: str = "{B}{B}{B}") -> Card:
+    return Card("dr", "Dark Ritual", parse_cost("{B}"), "Instant",
+                oracle_text=f"Add {mana}.",
+                effects=(Effect("add_mana", (("mana", mana),)),))
+
+
+def test_a_ritual_puts_mana_in_the_pool() -> None:
+    from manalab.engine import mana
+
+    state = GameState.new([[], []])
+    spell = state.create(_ritual(), owner=0, zone=Zone.STACK)
+    resolve.apply(state, spell, [], state.log)
+
+    assert state.players[0].mana_pool == {"B": 3}
+
+
+def test_floating_mana_pays_for_a_spell_without_tapping() -> None:
+    """The point of a pool: mana that already exists is spent before anything
+    is tapped, which is what makes a ritual worth casting."""
+    from manalab.engine import mana
+
+    state = GameState.new([[], []])
+    state.players[0].mana_pool = {"B": 3}
+    payment = mana.pay(state, 0, parse_cost("{2}{B}"))
+
+    assert payment.tapped == (), "it tapped a permanent despite floating mana"
+    assert state.players[0].mana_pool == {}
+
+
+def test_coloured_pips_are_paid_before_generic() -> None:
+    """Spending the one green on a generic pip while a {G} is still unpaid turns
+    a payable cost unpayable."""
+    from manalab.engine import mana
+
+    spent, remaining = mana.spend_pool({"G": 1, "C": 1}, parse_cost("{1}{G}"))
+    assert spent["G"] == 1
+    assert remaining.generic == 0 and remaining.symbols == ()
+
+
+def test_the_pool_empties_between_steps() -> None:
+    """CR 500.4. Without it a ritual on turn one pays for a spell on turn six."""
+    from manalab.engine.agents import PassingAgent
+
+    forest = Card("f3", "Forest", parse_cost(None), "Basic Land — Forest",
+                  produces=frozenset("G"), taps_for_mana=True)
+    state = GameState.new([[forest] * 60, [forest] * 60])
+    game = Game(state, [PassingAgent(), PassingAgent()], max_turns=2)
+    state.players[0].mana_pool = {"G": 5}
+
+    game.setup()
+    game.run()
+
+    assert state.players[0].mana_pool == {}
+
+
+def test_mana_the_engine_cannot_read_is_refused() -> None:
+    card = Card("x", "Any Color", parse_cost("{G}"), "Instant",
+                effects=(Effect("add_mana", (("mana", "one mana of any color"),)),))
+    assert any("mana not understood" in r for r in resolve.unsupported(card))
