@@ -31,7 +31,7 @@ from manalab.engine.zones import Zone
 
 IMPLEMENTED = frozenset(
     {"deal_damage", "destroy", "draw", "gain_life", "pump", "counter_spell",
-     "put_counters", "shuffle"}
+     "put_counters", "shuffle", "search_library", "reveal"}
 )
 
 COUNTER_KINDS = frozenset({"+1/+1", "-1/-1"})
@@ -41,6 +41,56 @@ A `charge` or `loyalty` counter can be *stored* on an object — `add_counters`
 takes any string — but nothing reads it, so a card that cares about one would
 be admitted and then quietly do nothing. Only the two `power`/`toughness`
 read are accepted; the rest are refused by name."""
+
+# `search_library` arrives as one free-text clause — the parser swallows the
+# whole "find X, put it somewhere, then shuffle" sentence into a single `what`.
+# There are 461 distinct shapes across 806 uses and the commonest is only 7.4%,
+# so there is no general implementation to write here; there is a short list of
+# shapes that mean exactly one thing. These are the basic-land fetches, which is
+# the green ramp package — 152 of the 806. Everything else is refused by name.
+_FETCH = (
+    (re.compile(r"^an? basic land card, put (?:it|that card) onto the battlefield"
+                r"(?P<tapped> tapped)?, then shuffle$", re.I), 1, "battlefield"),
+    (re.compile(r"^up to two basic land cards, put them onto the battlefield"
+                r"(?P<tapped> tapped)?, then shuffle$", re.I), 2, "battlefield"),
+    (re.compile(r"^an? basic land card, reveal it, put it into your hand,"
+                r" then shuffle$", re.I), 1, "hand"),
+    # A basic type by name — "a Forest card" — is still a basic-land fetch. The
+    # engine does not model choosing *which*, and takes the first match, which is
+    # the same approximation as every other fetch here.
+    (re.compile(r"^an? (?:forest|island|swamp|mountain|plains) card,"
+                r" put (?:it|that card) onto the battlefield(?P<tapped> tapped)?,"
+                r" then shuffle$", re.I), 1, "battlefield"),
+)
+
+# Cultivate and Kodama's Reach: two lands, one to each place. Split
+# destinations do not fit the (count, destination) shape above, so they get
+# their own entry rather than being bent into it.
+_SPLIT_FETCH = re.compile(
+    r"^up to two basic land cards, reveal those cards, put one onto the"
+    r" battlefield tapped and the other into your hand, then shuffle$", re.I)
+
+
+def _fetch_plan(effect: Effect) -> tuple[int, str, bool] | None:
+    """(how many, where to, tapped) for a search clause, or None to refuse it."""
+    what = str(effect.get("what", "")).strip().rstrip(".")
+    if _SPLIT_FETCH.match(what):
+        return 2, "split", True
+    for pattern, count, destination in _FETCH:
+        match = pattern.match(what)
+        if match:
+            tapped = bool(match.groupdict().get("tapped"))
+            return count, destination, tapped
+    return None
+
+
+# Revealing changes what opponents know, not what is on the board, and this
+# engine has no hidden-information model for it to matter to — so for a card
+# already being found or drawn it is genuinely a no-op. Only the back-references
+# are accepted. `reveal` also arrives carrying swallowed *cost* text on some
+# cards ("a Dinosaur card from your hand or pay {1}"), and treating one of those
+# as a no-op would skip a cost the player has to pay.
+_REVEAL_NOOP = frozenset({"it", "them", "those cards", "that card", "this card"})
 
 MASS_VERBS = frozenset({"deal_damage", "destroy"})
 """Verbs that may apply to a whole board.
@@ -88,6 +138,11 @@ def unsupported(card: Card) -> tuple[str, ...]:
             # anthem that also buffs the opponent, which is not an approximation
             # of the card, it is a different card.
             reasons.append(f"{effect.verb} over a whole board needs a duration model")
+        if effect.verb == "reveal" and \
+                str(effect.get("what", "")).strip().rstrip(".").lower() not in _REVEAL_NOOP:
+            reasons.append(f"reveal not understood: {effect.get('what')!r}")
+        if effect.verb == "search_library" and _fetch_plan(effect) is None:
+            reasons.append(f"library search not understood: {effect.get('what')!r}")
         if effect.verb == "put_counters":
             kind = str(effect.get("kind", ""))
             if kind not in COUNTER_KINDS:
@@ -278,6 +333,33 @@ def _apply_one(
         amount = int(effect.get("amount", 1))
         obj.add_counters(kind, amount)
         log.append(f"{name} puts {amount} {kind} on {obj.card.name}")
+
+    elif verb == "search_library":
+        plan = _fetch_plan(effect)
+        if plan is None:  # pragma: no cover - unsupported() refuses these first
+            return
+        count, destination, tapped = plan
+        found = [o for o in state.library(controller)
+                 if o.card.is_land and "Basic" in o.card.type_line][:count]
+        for index, obj in enumerate(found):
+            # "split" is Cultivate's shape: the first land hits the battlefield
+            # tapped, the second goes to hand.
+            if destination == "split":
+                zone = Zone.BATTLEFIELD if index == 0 else Zone.HAND
+            else:
+                zone = Zone.BATTLEFIELD if destination == "battlefield" else Zone.HAND
+            new = state.move(obj, zone, controller=controller)
+            if zone is Zone.BATTLEFIELD and tapped:
+                new.tapped = True
+            log.append(f"{name}: fetches {new.card.name} to {zone}")
+        # The shuffle happens whether or not anything was found — failing to find
+        # is a legal outcome and still shuffles.
+        state.shuffle(controller)
+
+    elif verb == "reveal":
+        # A no-op by design, not by omission: nothing about the board changes,
+        # and the engine has no hidden information for it to reveal.
+        log.append(f"{name}: reveals {effect.get('what')}")
 
     elif verb == "shuffle":
         state.shuffle(controller)

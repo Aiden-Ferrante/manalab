@@ -471,3 +471,74 @@ def test_shuffle_reorders_the_library() -> None:
     resolve.apply(state, spell, [], state.log)
 
     assert [o.card.name for o in state.library(0)] != before
+
+
+# --- searching the library ----------------------------------------------
+
+
+def _rampant_growth() -> Card:
+    return Card("rg", "Rampant Growth", parse_cost("{1}{G}"), "Sorcery",
+                oracle_text="Search your library for a basic land card, put it onto "
+                            "the battlefield tapped, then shuffle.",
+                effects=(Effect("search_library", (
+                    ("what", "a basic land card, put it onto the battlefield tapped, "
+                             "then shuffle"),)),))
+
+
+def _library() -> list[Card]:
+    forest = Card("f", "Forest", parse_cost(None), "Basic Land — Forest",
+                  produces=frozenset("G"), taps_for_mana=True, oracle_text="")
+    bear = Card("b", "Bear", parse_cost("{1}{G}"), "Creature — Bear",
+                power="2", toughness="2")
+    return [bear] * 5 + [forest] * 5
+
+
+def test_a_basic_land_fetch_puts_a_land_onto_the_battlefield_tapped() -> None:
+    state = GameState.new([_library(), []], seed=1)
+    spell = state.create(_rampant_growth(), owner=0, zone=Zone.STACK)
+
+    resolve.apply(state, spell, [], state.log)
+
+    lands = [o for o in state.battlefield(0) if o.card.is_land]
+    assert len(lands) == 1, "the fetch found nothing"
+    assert lands[0].card.name == "Forest"
+    assert lands[0].tapped, "the card says tapped"
+
+
+def test_the_fetched_land_leaves_the_library() -> None:
+    state = GameState.new([_library(), []], seed=1)
+    before = len(state.library(0))
+    spell = state.create(_rampant_growth(), owner=0, zone=Zone.STACK)
+    resolve.apply(state, spell, [], state.log)
+
+    assert len(state.library(0)) == before - 1
+
+
+def test_a_fetch_that_finds_nothing_is_legal() -> None:
+    """Failing to find is a legal outcome, and it still shuffles."""
+    bear = Card("b", "Bear", parse_cost("{1}{G}"), "Creature — Bear",
+                power="2", toughness="2")
+    state = GameState.new([[bear] * 6, []], seed=1)
+    spell = state.create(_rampant_growth(), owner=0, zone=Zone.STACK)
+
+    resolve.apply(state, spell, [], state.log)
+
+    assert [o for o in state.battlefield(0) if o.card.is_land] == []
+
+
+def test_a_search_clause_the_engine_cannot_read_is_refused() -> None:
+    """461 distinct shapes exist and most mean something specific. Guessing at
+    one would fetch the wrong card with confidence."""
+    card = Card("x", "Weird Tutor", parse_cost("{G}"), "Sorcery",
+                effects=(Effect("search_library", (
+                    ("what", "a creature card with mana value X or less, put it onto "
+                             "the battlefield, then shuffle"),)),))
+    reasons = resolve.unsupported(card)
+    assert any("library search not understood" in r for r in reasons), reasons
+
+
+def test_a_real_ramp_spell_from_the_store_is_faithful(store) -> None:
+    from manalab.engine import fidelity
+
+    rampant = store.by_name("Rampant Growth")
+    assert fidelity.assess(rampant).faithful, fidelity.assess(rampant).reasons
