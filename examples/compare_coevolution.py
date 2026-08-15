@@ -1,7 +1,12 @@
 """Diff two co-evolution runs: what did implementing effect verbs change?
 
-    python examples/compare_coevolution.py reports/coevo-before-verbs.txt \\
-                                           reports/coevo-after-verbs.txt
+    python examples/compare_coevolution.py \\
+        reports/archive/2026-08-15-pre-engine-fixes/coevo-before-verbs.txt \\
+        reports/archive/2026-08-15-pre-engine-fixes/coevo-after-verbs.txt
+
+Both inputs are archived: they were produced by an engine with three confirmed
+execution defects (see reports/README.md). The structural observations they
+support may survive; the magnitudes will not.
 
 Reads the reports rather than re-running anything, so the comparison is over the
 runs that actually happened. The two runs must share every parameter except the
