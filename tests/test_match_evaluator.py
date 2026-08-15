@@ -110,12 +110,24 @@ def test_a_counterspell_is_now_faithful() -> None:
     assert fidelity.assess(CardStore().by_name("Counterspell")).faithful
 
 
-def test_a_token_maker_is_still_refused() -> None:
+def test_a_token_maker_is_now_playable() -> None:
+    """Raise the Alarm stood in for "a verb we do not have" until `create_token`
+    existed. It makes two 1/1 Soldiers, which is a body this engine represents
+    completely, so it is a card now rather than an example."""
     from manalab.cards.store import CardStore
 
     report = fidelity.assess(CardStore().by_name("Raise the Alarm"))
-    assert not report.faithful
-    assert any("create_token" in r for r in report.reasons)
+    assert report.faithful, report.reasons
+
+
+def test_a_token_whose_body_is_not_the_whole_card_is_still_refused() -> None:
+    """Treasure, Food and Blood are artifacts whose point is an activated
+    ability there is nowhere to run — 455 uses between them."""
+    from manalab.cards.model import Effect
+
+    card = Card("t", "Treasure Maker", parse_cost("{1}{G}"), "Sorcery",
+                effects=(Effect("create_token", (("amount", 1), ("what", "Treasure"))),))
+    assert any("token not modelled" in r for r in fidelity.assess(card).reasons)
 
 
 def test_every_combat_keyword_is_actually_implemented() -> None:

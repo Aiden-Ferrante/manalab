@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import Sequence
 
 import manalab.engine.targets as T
+from manalab.cards.mana import parse_cost
 from manalab.cards.model import Card, Effect
 from manalab.engine.objects import GameObject
 from manalab.engine.state import GameState
@@ -31,7 +32,8 @@ from manalab.engine.zones import Zone
 
 IMPLEMENTED = frozenset(
     {"deal_damage", "destroy", "draw", "gain_life", "pump", "counter_spell",
-     "put_counters", "shuffle", "search_library", "reveal"}
+     "put_counters", "shuffle", "search_library", "reveal",
+     "create_token"}
 )
 
 COUNTER_KINDS = frozenset({"+1/+1", "-1/-1"})
@@ -92,6 +94,36 @@ def _fetch_plan(effect: Effect) -> tuple[int, str, bool] | None:
 # as a no-op would skip a cost the player has to pay.
 _REVEAL_NOOP = frozenset({"it", "them", "those cards", "that card", "this card"})
 
+# "1/1 white Soldier creature", "2/2 black Zombie creature" — a plain body, which
+# is a thing this engine can represent completely. Deliberately anchored: a
+# descriptor carrying "with" has keywords or an ability after it, and Treasure,
+# Food, Blood and Powerstone (291 + 129 + 35 + 32 uses) are artifacts whose whole
+# point is an activated ability there is nowhere to run. All refused.
+_TOKEN = re.compile(
+    r"^(?P<power>\d+)/(?P<toughness>\d+) "
+    r"(?P<descriptor>[a-z][a-z ]*?)(?: artifact)? creature$", re.I)
+
+
+def _token_card(effect: Effect) -> Card | None:
+    """The `Card` a create-token effect makes, or None to refuse it."""
+    what = str(effect.get("what", "")).strip().rstrip(".")
+    match = _TOKEN.match(what)
+    if match is None:
+        return None
+    words = match.group("descriptor").split()
+    # The last word is the creature type; anything before it is colour and
+    # supertypes, which a token that is never cast does not need modelled.
+    subtype = words[-1].capitalize() if words else "Token"
+    return Card(
+        oracle_id=f"token:{what}",
+        name=subtype,
+        cost=parse_cost(None),
+        type_line=f"Token Creature — {subtype}",
+        power=match.group("power"),
+        toughness=match.group("toughness"),
+        oracle_text="",
+    )
+
 MASS_VERBS = frozenset({"deal_damage", "destroy"})
 """Verbs that may apply to a whole board.
 
@@ -138,6 +170,11 @@ def unsupported(card: Card) -> tuple[str, ...]:
             # anthem that also buffs the opponent, which is not an approximation
             # of the card, it is a different card.
             reasons.append(f"{effect.verb} over a whole board needs a duration model")
+        if effect.verb == "create_token":
+            if _token_card(effect) is None:
+                reasons.append(f"token not modelled: {effect.get('what')!r}")
+            if not isinstance(effect.get("amount", 1), int):
+                reasons.append(f"token count not a number: {effect.get('amount')!r}")
         if effect.verb == "reveal" and \
                 str(effect.get("what", "")).strip().rstrip(".").lower() not in _REVEAL_NOOP:
             reasons.append(f"reveal not understood: {effect.get('what')!r}")
@@ -355,6 +392,16 @@ def _apply_one(
         # The shuffle happens whether or not anything was found — failing to find
         # is a legal outcome and still shuffles.
         state.shuffle(controller)
+
+    elif verb == "create_token":
+        token = _token_card(effect)
+        if token is None:  # pragma: no cover - unsupported() refuses these first
+            return
+        for _ in range(int(effect.get("amount", 1))):
+            # Through `create`, so it fires enters-the-battlefield triggers — a
+            # token entering triggers exactly as a cast creature does.
+            state.create(token, owner=controller, zone=Zone.BATTLEFIELD)
+        log.append(f"{name}: creates {effect.get('amount', 1)} {token.name}")
 
     elif verb == "reveal":
         # A no-op by design, not by omission: nothing about the board changes,

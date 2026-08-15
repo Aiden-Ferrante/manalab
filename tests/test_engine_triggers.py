@@ -173,3 +173,46 @@ def test_two_copies_each_fire_their_own_trigger():
     game._resolve_top()
     game._resolve_top()
     assert len(state.hand(0)) == 2
+
+
+# --- tokens enter, and entering is an event ------------------------------
+
+
+def test_a_created_token_is_a_real_permanent():
+    from manalab.cards.model import Effect
+    from manalab.engine import resolve
+
+    state, _ = game_with()
+    maker = state.create(
+        Card("m", "Soldier Maker", parse_cost("{1}{W}"), "Sorcery",
+             effects=(Effect("create_token", (("amount", 2),
+                                              ("what", "1/1 white Soldier creature"))),)),
+        owner=0, zone=Zone.STACK)
+
+    resolve.apply(state, maker, [], state.log)
+
+    tokens = [o for o in state.battlefield(0)]
+    assert len(tokens) == 2
+    assert (tokens[0].power, tokens[0].toughness) == (1, 1)
+    assert tokens[0].card.name == "Soldier"
+
+
+def test_a_token_entering_fires_enters_triggers():
+    """A token entering triggers exactly as a cast creature does — which is why
+    tokens are made through `state.create` rather than inserted directly."""
+    from manalab.cards.model import Effect
+    from manalab.engine import resolve
+
+    state, game = game_with()
+    state.create(visionary(), owner=0, zone=Zone.BATTLEFIELD, quiet=True)
+    state.events.clear()
+
+    maker = state.create(
+        Card("m", "Maker", parse_cost("{1}{G}"), "Sorcery",
+             effects=(Effect("create_token", (("amount", 1),
+                                              ("what", "1/1 green Saproling creature"))),)),
+        owner=0, zone=Zone.STACK)
+    resolve.apply(state, maker, [], state.log)
+
+    assert any(e.kind is EventKind.ENTERS for e in state.events), \
+        "a token entering the battlefield is an event like any other"

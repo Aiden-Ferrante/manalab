@@ -178,9 +178,9 @@ def test_a_pumped_creature_survives_what_would_have_killed_it(store) -> None:
 
 
 def test_an_unimplemented_verb_is_refused_by_name(store) -> None:
-    reasons = resolve.unsupported(store.by_name("Raise the Alarm"))
+    reasons = resolve.unsupported(store.by_name("Heroic Intervention"))
     assert reasons
-    assert any("create_token" in r for r in reasons)
+    assert any("grant_ability" in r for r in reasons)
 
 
 def test_a_conditional_counter_is_refused(store) -> None:
@@ -198,7 +198,7 @@ def test_a_card_with_an_unreadable_target_is_refused_whole(store) -> None:
 
 
 def test_a_refused_card_has_no_plan(store) -> None:
-    assert resolve.plan_for(store.by_name("Raise the Alarm")) is None
+    assert resolve.plan_for(store.by_name("Heroic Intervention")) is None
 
 
 # --- casting through the action layer -----------------------------------
@@ -226,10 +226,10 @@ def test_a_targeted_spell_with_no_legal_target_cannot_be_cast(store) -> None:
 
 def test_an_unresolvable_spell_is_still_castable_and_reported(store) -> None:
     """It does nothing, exactly as before — but says so rather than vanishing."""
-    unresolvable = store.by_name("Raise the Alarm")
-    plains = Card("p", "Plains", parse_cost(None), "Basic Land — Plains",
-                  produces=frozenset("W"), taps_for_mana=True)
-    state = board(hand=[unresolvable], battlefield=[plains] * 3)
+    unresolvable = store.by_name("Heroic Intervention")   # {1}{G}
+    forest = Card("f2", "Forest", parse_cost(None), "Basic Land — Forest",
+                  produces=frozenset("G"), taps_for_mana=True)
+    state = board(hand=[unresolvable], battlefield=[forest] * 3)
     options = A.legal(state, 0, Step.PRECOMBAT_MAIN, stack_empty=True)
     casts = [o for o in options if isinstance(o, A.CastSpell)]
     assert len(casts) == 1
