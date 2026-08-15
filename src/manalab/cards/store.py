@@ -346,11 +346,31 @@ class CardStore:
         return {n: lowered[n.lower()] for n in wanted}
 
     def legal_in(self, fmt: str) -> list[str]:
-        """Card names legal in a format, e.g. 'modern', 'commander'."""
+        """Card names legal in a format, e.g. 'modern', 'commander'.
+
+        Restricted cards are excluded, which is right for "what may I play four
+        of" and wrong for "what may I play" — use `legality_in` for the latter.
+        """
+        return [n for n, status in self.legality_in(fmt).items() if status == "legal"]
+
+    def legality_in(self, fmt: str) -> dict[str, str]:
+        """`{card name: 'legal' | 'restricted'}` for one format.
+
+        Keeps `restricted` rather than flattening it, because it is a copy limit
+        and not an exclusion: dropping it would remove Ancestral Recall, Black
+        Lotus and most of what makes Vintage a format.
+
+        Read via `json_extract_string` rather than `legalities[?]`, which is a
+        bind-time failure when the key is absent — the same fragility the loader
+        predicate had.
+        """
         cur = self._con.execute(
-            "SELECT name FROM cards WHERE legalities[?] = 'legal' ORDER BY name", [fmt]
+            "SELECT name, json_extract_string(CAST(legalities AS JSON), '$.' || ?) "
+            "FROM cards WHERE json_extract_string(CAST(legalities AS JSON), '$.' || ?) "
+            "IN ('legal', 'restricted') ORDER BY name",
+            [fmt, fmt],
         )
-        return [r[0] for r in cur.fetchall()]
+        return {name: status for name, status in cur.fetchall()}
 
     def all_cards(self, limit: int | None = None) -> list[Card]:
         """Every card in the store. ~35k objects, a few seconds and ~200 MB.

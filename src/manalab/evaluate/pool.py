@@ -18,9 +18,11 @@ The split this produces is the honest one:
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterable, Mapping
 
+from manalab.cards import formats
+from manalab.cards.formats import Format
 from manalab.cards.model import Card, CandidatePool
 from manalab.cards.store import CardStore
 from manalab.engine import fidelity
@@ -65,10 +67,10 @@ def mono_color(
     store: CardStore,
     color: str = "G",
     *,
-    fmt: str = "modern",
+    fmt: Format | str = formats.MODERN,
     max_cmc: int = 7,
     include_lands: bool = True,
-    deck_size: int = 60,
+    deck_size: int | None = None,
 ) -> Pool:
     """Every single-colour card of `color` that is legal in `fmt`.
 
@@ -76,15 +78,26 @@ def mono_color(
     deck but they are not a *green* deckbuilding decision, and letting them in
     turns "what is the best mono-green deck" into "what is the best colourless
     deck with a forest in it".
+
+    `fmt` takes a `Format` or its name; the format supplies the deck size and the
+    copy limits, so a Commander pool comes out singleton at 100 without the
+    caller restating either. `deck_size` still overrides, for the experiments
+    that vary it deliberately.
+
+    Restricted cards are *included* and capped at one. Filtering on `= 'legal'`
+    excluded them entirely, which silently emptied Vintage of the fifty-two
+    cards that define it.
     """
+    fmt = formats.by_name(fmt) if isinstance(fmt, str) else fmt
     identity = json.dumps([color])
     rows = store._rows(  # noqa: SLF001 - the store exposes no typed filter yet
         """
         color_identity = ?
-        AND json_extract_string(legalities, '$.' || ?) = 'legal'
+        AND json_extract_string(CAST(legalities AS JSON), '$.' || ?)
+            IN ('legal', 'restricted')
         AND cmc <= ?
         """,
-        [identity, fmt, max_cmc],
+        [identity, fmt.legality_key, max_cmc],
     )
     candidates = [store._build(row) for row in rows]  # noqa: SLF001
 
@@ -93,17 +106,29 @@ def mono_color(
                                "W": "Plains", "B": "Swamp"}[color])
         candidates.append(basic)
 
-    return partition(candidates, deck_size=deck_size, unlimited={"Forest", "Mountain",
-                                                                "Island", "Plains", "Swamp"})
+    return partition(candidates, fmt=fmt, legal=store.legality_in(fmt.legality_key),
+                     deck_size=deck_size)
 
 
 def partition(
     candidates: Iterable[Card],
     *,
-    deck_size: int = 60,
+    deck_size: int | None = None,
     unlimited: Iterable[str] = (),
+    fmt: Format | None = None,
+    legal: Mapping[str, str] | None = None,
 ) -> Pool:
-    """Split cards into the faithful pool and the marked text tier."""
+    """Split cards into the faithful pool and the marked text tier.
+
+    With a `fmt` the construction rules come from the format — deck size, copy
+    limit, singleton, which cards are exempt — and `legal` supplies each card's
+    status so restricted cards land at one copy. Without one the old defaults
+    apply, which is what the hand-built fixtures want.
+    """
+    if fmt is not None:
+        deck_size = fmt.deck_size if deck_size is None else deck_size
+        unlimited = fmt.unlimited if not unlimited else unlimited
+    deck_size = 60 if deck_size is None else deck_size
     unlimited = set(unlimited)
     faithful: list[Card] = []
     text: list[Card] = []
@@ -117,14 +142,18 @@ def partition(
             text.append(card)
             reasons[card.name] = report.reasons
 
-    # A basic land is capped by the deck size, not by the four-copy rule.
-    max_copies = {c.name: deck_size for c in faithful if c.name in unlimited}
-
-    pool = CandidatePool(
-        card_ids=tuple(c.name for c in faithful),
-        max_copies=max_copies,
-        deck_size=deck_size,
-    )
+    names = tuple(c.name for c in faithful)
+    if fmt is not None:
+        pool = fmt.candidate_pool(names, legal or {})
+        if deck_size != fmt.deck_size:      # an explicit override wins
+            pool = replace(pool, deck_size=deck_size)
+    else:
+        # A basic land is capped by the deck size, not by the four-copy rule.
+        pool = CandidatePool(
+            card_ids=names,
+            max_copies={c.name: deck_size for c in faithful if c.name in unlimited},
+            deck_size=deck_size,
+        )
     return Pool(
         pool=pool,
         cards={c.name: c for c in faithful},

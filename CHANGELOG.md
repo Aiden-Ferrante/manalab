@@ -9,6 +9,31 @@ Deckbuilding search closes the loop: a genetic algorithm scored by games the
 rules engine actually plays. The notebook
 `notebooks/genetic_deck_search.ipynb` runs it end to end with the numbers below.
 
+### Added
+
+- **`cards/formats.py` — constructed formats as first-class objects.** "The
+  format" used to be the string `"modern"` threaded through `mono_color`, with
+  the construction rules scattered as constants: 60 in `pool.partition`, a
+  four-copy `default_max` on `CandidatePool` whose docstring already said "1 in
+  singleton" with nothing supplying it, and a basic-land exemption written out
+  twice. Commander could not be expressed at all.
+
+  A `Format` owns legal pool, deck size, copy limit and starting life. Seven
+  presets: Standard, Pioneer, Modern, Legacy, Vintage, Pauper, Commander.
+  `mono_color(store, "U", fmt=COMMANDER)` now returns a singleton pool at 100
+  cards with basics uncapped, without the caller restating any of it. Strings
+  still work, so existing examples are unchanged.
+
+  **Restricted is now a copy limit rather than an exclusion.** `legal_in`
+  filtered on `= 'legal'`, so Vintage silently lost the 52 cards that define it —
+  Black Lotus, Ancestral Recall, Time Walk. The new `store.legality_in` keeps the
+  status, and a restricted card lands at one copy in the pool. It also reads
+  formats through `json_extract_string` rather than `legalities[?]`, which is the
+  same bind-time failure the loader predicate had.
+
+  `violations()` takes a legality map rather than a store, so checking a deck
+  costs no query and the tests need no corpus.
+
 ### Fixed
 
 - **Asymmetric pump was executed with the wrong arithmetic** (`engine/resolve.py`).
