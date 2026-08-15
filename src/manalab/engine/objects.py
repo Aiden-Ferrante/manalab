@@ -15,6 +15,18 @@ from dataclasses import dataclass, field, replace
 from typing import Mapping
 
 from manalab.cards.model import Ability, Card
+
+COMBAT_KEYWORDS = frozenset({
+    "flying", "reach", "menace", "trample", "deathtouch", "first strike",
+    "double strike", "lifelink", "vigilance", "haste", "defender",
+})
+"""Keywords `engine.combat` and this module genuinely implement.
+
+Lives here rather than in `fidelity` because `has()` is what answers for them,
+and because `resolve` needs the same set to decide what it may grant — and
+`fidelity` imports `resolve`, so the constant cannot live downstream of it
+without a cycle or a second copy that drifts.
+"""
 from manalab.engine.zones import Zone
 
 
@@ -55,6 +67,10 @@ class GameObject:
     unless it has haste."""
     attached_to: int | None = None
     face_down: bool = False
+    granted: set[str] = field(default_factory=set)
+    """Keywords granted until end of turn, cleared in cleanup beside the P/T
+    modifiers. Kept apart from the card's printed keywords so nothing has to
+    mutate a frozen `Card` that other objects share."""
     trigger: Ability | None = None
     """Set when this stack entry is a triggered ability rather than a card.
 
@@ -115,7 +131,14 @@ class GameObject:
         return self.toughness <= 0 or self.damage >= self.toughness
 
     def has(self, keyword: str) -> bool:
-        return self.card.has(keyword)
+        """Printed on the card, or granted to it this turn.
+
+        Read through here rather than off `card` so a granted keyword is
+        indistinguishable from a printed one everywhere combat asks — which is
+        the whole point, since "gains trample until end of turn" has to make the
+        same trample the printed one does.
+        """
+        return self.card.has(keyword) or keyword.lower() in self.granted
 
     @property
     def can_tap(self) -> bool:
@@ -169,7 +192,8 @@ class GameObject:
         self.blocked_by = ()
 
     def clone(self) -> "GameObject":
-        return replace(self, counters=dict(self.counters))
+        return replace(self, counters=dict(self.counters),
+                       granted=set(self.granted))
 
     def __repr__(self) -> str:
         marks = []

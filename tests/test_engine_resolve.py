@@ -180,7 +180,7 @@ def test_a_pumped_creature_survives_what_would_have_killed_it(store) -> None:
 def test_an_unimplemented_verb_is_refused_by_name(store) -> None:
     reasons = resolve.unsupported(store.by_name("Heroic Intervention"))
     assert reasons
-    assert any("grant_ability" in r for r in reasons)
+    assert any("cannot grant" in r for r in reasons), reasons
 
 
 def test_a_conditional_counter_is_refused(store) -> None:
@@ -542,3 +542,30 @@ def test_a_real_ramp_spell_from_the_store_is_faithful(store) -> None:
 
     rampant = store.by_name("Rampant Growth")
     assert fidelity.assess(rampant).faithful, fidelity.assess(rampant).reasons
+
+
+def test_a_granted_keyword_is_indistinguishable_from_a_printed_one() -> None:
+    """"Gains trample until end of turn" has to make the same trample the
+    printed keyword does, or combat would have to ask twice."""
+    state = GameState.new([[], []])
+    bear = state.create(
+        Card("b", "Bear", parse_cost("{1}{G}"), "Creature — Bear",
+             power="2", toughness="2"),
+        owner=0, zone=Zone.BATTLEFIELD, quiet=True)
+    assert not bear.has("Trample")
+
+    spell = state.create(
+        Card("g", "Grant", parse_cost("{G}"), "Instant",
+             effects=(Effect("grant_ability", (("ability", "trample"),
+                                               ("target", "target creature"))),)),
+        owner=0, zone=Zone.STACK)
+    resolve.apply(state, spell, [T.Target(object_id=bear.id)], state.log)
+
+    assert bear.has("Trample")
+
+
+def test_granting_a_keyword_the_engine_does_not_implement_is_refused() -> None:
+    card = Card("h", "Shroudy", parse_cost("{G}"), "Instant",
+                effects=(Effect("grant_ability", (("ability", "hexproof"),
+                                                  ("target", "target creature"))),))
+    assert any("cannot grant" in r for r in resolve.unsupported(card))

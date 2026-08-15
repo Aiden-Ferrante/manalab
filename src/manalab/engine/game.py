@@ -151,6 +151,7 @@ class Game:
                 # counter-based modelling made permanent.
                 obj.power_mod = 0
                 obj.toughness_mod = 0
+                obj.granted.clear()
 
     # --- priority -------------------------------------------------------
 

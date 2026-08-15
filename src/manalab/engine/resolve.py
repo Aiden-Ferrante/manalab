@@ -26,14 +26,14 @@ from typing import Sequence
 import manalab.engine.targets as T
 from manalab.cards.mana import parse_cost
 from manalab.cards.model import Card, Effect
-from manalab.engine.objects import GameObject
+from manalab.engine.objects import COMBAT_KEYWORDS, GameObject
 from manalab.engine.state import GameState
 from manalab.engine.zones import Zone
 
 IMPLEMENTED = frozenset(
     {"deal_damage", "destroy", "draw", "gain_life", "pump", "counter_spell",
      "put_counters", "shuffle", "search_library", "reveal",
-     "create_token"}
+     "create_token", "grant_ability"}
 )
 
 COUNTER_KINDS = frozenset({"+1/+1", "-1/-1"})
@@ -170,6 +170,10 @@ def unsupported(card: Card) -> tuple[str, ...]:
             # anthem that also buffs the opponent, which is not an approximation
             # of the card, it is a different card.
             reasons.append(f"{effect.verb} over a whole board needs a duration model")
+        if effect.verb == "grant_ability":
+            granted = str(effect.get("ability", "")).strip().lower()
+            if granted not in COMBAT_KEYWORDS:
+                reasons.append(f"cannot grant: {granted!r}")
         if effect.verb == "create_token":
             if _token_card(effect) is None:
                 reasons.append(f"token not modelled: {effect.get('what')!r}")
@@ -392,6 +396,13 @@ def _apply_one(
         # The shuffle happens whether or not anything was found — failing to find
         # is a legal outcome and still shuffles.
         state.shuffle(controller)
+
+    elif verb == "grant_ability":
+        if target is None or target.is_player:
+            return
+        obj = state.objects[target.object_id]
+        obj.granted.add(str(effect.get("ability", "")).strip().lower())
+        log.append(f"{name} grants {effect.get('ability')} to {obj.card.name}")
 
     elif verb == "create_token":
         token = _token_card(effect)

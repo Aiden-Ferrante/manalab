@@ -24,25 +24,8 @@ import manalab.engine.triggers as triggers
 from manalab.cards.model import Card
 from manalab.engine.mana import MULTI_MANA
 
-COMBAT_KEYWORDS = frozenset(
-    {
-        "flying",
-        "reach",
-        "menace",
-        "trample",
-        "deathtouch",
-        "first strike",
-        "double strike",
-        "lifelink",
-        "vigilance",
-        "haste",
-        "defender",
-    }
-)
-"""Keywords `engine.combat` and `engine.objects` genuinely implement.
-
-Anything outside this set is printed on the card and ignored by the engine.
-"""
+from manalab.engine.objects import COMBAT_KEYWORDS  # noqa: F401 - re-exported
+"""Re-exported: callers have imported it from here since before it moved."""
 
 _REMINDER = re.compile(r"\([^)]*\)")
 _MANA_ABILITY = re.compile(r"^\{t\}: add \{[wubrgc]\}\.?$", re.I)
