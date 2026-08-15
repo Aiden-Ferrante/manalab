@@ -33,7 +33,7 @@ from manalab.engine.zones import Zone
 IMPLEMENTED = frozenset(
     {"deal_damage", "destroy", "draw", "gain_life", "pump", "counter_spell",
      "put_counters", "shuffle", "search_library", "reveal",
-     "create_token", "grant_ability", "add_mana"}
+     "create_token", "grant_ability", "add_mana", "ability_word"}
 )
 
 COUNTER_KINDS = frozenset({"+1/+1", "-1/-1"})
@@ -419,6 +419,14 @@ def _apply_one(
         # The shuffle happens whether or not anything was found — failing to find
         # is a legal outcome and still shuffles.
         state.shuffle(controller)
+
+    elif verb == "ability_word":
+        # CR 207.2c: an ability word has no rules meaning. Landfall, threshold,
+        # delirium and the rest are italic labels that group similar abilities;
+        # the ability they label is parsed separately and keeps its own trigger,
+        # which was checked rather than assumed. A no-op here is the rules being
+        # followed, not a gap being papered over.
+        pass
 
     elif verb == "add_mana":
         added = _mana_added(effect)

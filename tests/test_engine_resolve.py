@@ -633,3 +633,19 @@ def test_mana_the_engine_cannot_read_is_refused() -> None:
     card = Card("x", "Any Color", parse_cost("{G}"), "Instant",
                 effects=(Effect("add_mana", (("mana", "one mana of any color"),)),))
     assert any("mana not understood" in r for r in resolve.unsupported(card))
+
+
+def test_an_ability_word_is_a_no_op_because_the_rules_say_so(store) -> None:
+    """CR 207.2c. Landfall is an italic label, not a mechanic.
+
+    The check that matters is the second one: the ability the word labels is
+    parsed separately and keeps its own trigger, so treating the word as nothing
+    drops nothing.
+    """
+    from manalab.engine import resolve as R
+
+    card = store.by_name("Grazing Gladehart")
+    (ability,) = [a for a in card.abilities if a.kind == "triggered"]
+    assert [e.verb for e in ability.effects] == ["ability_word", "gain_life"]
+    assert ability.trigger, "the word swallowed the trigger it labels"
+    assert "ability_word" not in " ".join(R.unsupported(card))
