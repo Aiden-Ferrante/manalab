@@ -9,7 +9,62 @@ Deckbuilding search closes the loop: a genetic algorithm scored by games the
 rules engine actually plays. The notebook
 `notebooks/genetic_deck_search.ipynb` runs it end to end with the numbers below.
 
+### Fixed
+
+- **Asymmetric pump was executed with the wrong arithmetic** (`engine/resolve.py`).
+  Pump was modelled as counters, which are symmetric by construction, so the two
+  halves were collapsed with `max(power, toughness)` and applied to both. Nameless
+  Inversion (+3/-3) resolved as a permanent +3/+3 buff instead of killing its
+  target; Chelonian Tackle (+0/+10) made a 12/12; every all-negative shrink was a
+  silent no-op; Agony Warp did nothing at all. **43 of 102 pump cards in the
+  searchable pool were wrong, and `fidelity` called every one of them faithful.**
+  `GameObject` now carries `power_mod`/`toughness_mod`, applied independently and
+  cleared in the cleanup step — so "until end of turn" now means what it says,
+  rather than lasting the rest of the game. Verified against Forge's hand-encoded
+  scripts: **0 pump amount mismatches across 30,931 cards.**
+
+- **`fidelity` could not see text the parser never read** (`engine/fidelity.py`,
+  `cards/model.py`, `cards/effects.py`). The non-permanent branch asked
+  `resolve.unsupported`, which inspects only the effects that *did* parse, and
+  `with_effects` discarded `Parsed.unparsed` — so unmatched clauses were invisible
+  to the one mechanism whose job is to notice them. Pact of Negation entered the
+  blue pool as a free, drawback-free counterspell because "pay {3}{U}{U}, or you
+  lose the game" was dropped. `Card` now carries `unparsed`, and a card with any
+  is refused. 90 of 819 faithful cards were affected.
+
+- **"you" was modelled as "any player"** (`engine/targets.py`). `legal_targets`
+  returned every player, so a card's own drawback became a free choice and the
+  pilot redirected it every time — Sarkhan's Rage aimed its self-damage at the
+  opponent. New `TargetKind.CONTROLLER` resolves to the caster alone.
+
+### Changed
+
+- **The corpus is now cards you can actually play**: 35,142 → **31,878**. The
+  store keeps a card only if some paper format lists it as `legal` or
+  `restricted`. That removes 2,377 rows legal nowhere — Un-sets, Mystery Booster
+  playtest cards, and 589 objects that are not cards at all (207 planes, 107
+  vanguards, 102 schemes, 87 emblems, 50 tokens, 20 hosts, 14 augments) — plus
+  887 digital-only Alchemy rebalances, which no paper deck can contain and which
+  collide on name with the cards they rebalance. Banned-but-real cards stay:
+  Black Lotus, Chaos Orb and Shahrazad all survive on another format. **Zero
+  modern-legal cards are dropped**, verified.
+
+  The rule had been written out three times — the `cards` table, the `faces` CTE,
+  and `verify_exact.py` — so it is now one `_PLAYABLE` predicate plus one
+  `is_playable()` for callers holding raw JSON, both driven by `PAPER_FORMATS`.
+  Formats are read via `json_extract_string` rather than as struct fields,
+  because a missing key is a *bind-time* error that kills the whole build.
+
 ### Added
+
+- **`cards/forge.py` + `examples/forge_validation.py`** — the first external
+  check on what a card *means*, rather than on what it says. Forge publishes
+  ~33,700 cards as verb plus named parameters; we diff our `Effect(verb, params)`
+  against theirs. Covers 100% of modern-legal cards. It reproduces, mechanically
+  and at corpus scale, the defects a 43-card hand-written golden set found: 53
+  faithful cards carrying an effect we never encoded, 53 asymmetric pumps, 20
+  dropped target players, 3 flattened divided-damage spells. The scripts are
+  GPL-3.0 and stay in gitignored `data/` — read, never redistributed (ADR 0008).
 
 - **Combat keywords** (`engine/combat.py`) — flying and reach gating blocks,
   menace as a property of the whole assignment, trample spilling excess,
