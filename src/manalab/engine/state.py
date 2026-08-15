@@ -142,6 +142,11 @@ class GameState:
         if old.id not in self.objects:
             raise KeyError(f"{old!r} is not in the game (already moved?)")
 
+        # CR 903.9, applied here rather than at call sites because most of a
+        # commander's trips to the graveyard happen inside state-based
+        # actions, which no caller sees.
+        to = old.destination_for(to)
+
         self._zone_list(old.zone, old).remove(old.id)
         del self.objects[old.id]
 

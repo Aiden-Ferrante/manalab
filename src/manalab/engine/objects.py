@@ -71,6 +71,11 @@ class GameObject:
     """Keywords granted until end of turn, cleared in cleanup beside the P/T
     modifiers. Kept apart from the card's printed keywords so nothing has to
     mutate a frozen `Card` that other objects share."""
+    is_commander: bool = False
+    """Set for the object its owner named as their commander. Survives zone
+    changes via `fresh_copy`, unlike everything else on this object — a
+    commander that stopped being one on its way to the graveyard would never
+    come back to the command zone."""
     trigger: Ability | None = None
     """Set when this stack entry is a triggered ability rather than a card.
 
@@ -130,6 +135,22 @@ class GameObject:
             return True
         return self.toughness <= 0 or self.damage >= self.toughness
 
+    def destination_for(self, to: "Zone") -> "Zone":
+        """Where this object actually goes — CR 903.9 for a commander.
+
+        A commander headed for a graveyard or exile goes to the command zone
+        instead. The rules make it a choice its owner may decline; taking it
+        always is the approximation, and declining is only ever right for a deck
+        built to recur its commander out of a graveyard, which needs abilities
+        this engine does not have.
+
+        Lives on the object rather than in `commander` because `state.move` has
+        to ask it, and `commander` reads state — putting it there is a cycle.
+        """
+        if self.is_commander and to in (Zone.GRAVEYARD, Zone.EXILE):
+            return Zone.COMMAND
+        return to
+
     def has(self, keyword: str) -> bool:
         """Printed on the card, or granted to it this turn.
 
@@ -180,6 +201,7 @@ class GameObject:
             owner=self.owner,
             controller=controller,
             zone=zone,
+            is_commander=self.is_commander,
         )
 
     @property

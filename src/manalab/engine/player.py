@@ -19,6 +19,14 @@ class Player:
     land_drops: int = 1
     """Per turn. A field rather than a constant because Exploration exists."""
 
+    commander_casts: int = 0
+    """How many times this player has cast their commander from the command
+    zone. Each one makes the next cost {2} more (CR 903.8)."""
+    commander_damage: dict[str, int] = field(default_factory=dict)
+    """Damage taken from each commander, by name. Tracked per source because 20
+    from one and 20 from another is not a loss, and a single total would make it
+    one (CR 903.10a)."""
+
     has_lost: bool = False
     loss_reason: str = ""
     drew_from_empty: bool = False

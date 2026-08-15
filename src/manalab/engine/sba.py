@@ -13,6 +13,7 @@ legend rule. Not yet: auras with illegal attachments, token cleanup.
 
 from __future__ import annotations
 
+import manalab.engine.commander as commander
 from manalab.engine.state import GameState
 from manalab.engine.zones import Zone
 
@@ -48,6 +49,11 @@ def _one_pass(state: GameState) -> list[str]:
             player.has_lost, player.loss_reason = True, "empty library"
         elif player.poison >= MAX_POISON:
             player.has_lost, player.loss_reason = True, "poison"
+        elif commander.lethal_commander_damage(state, player.index):
+            # CR 903.10a. Checked beside the other loss conditions rather
+            # than in combat, because it is a state-based action and a
+            # player can reach 21 from a source that is not combat damage.
+            player.has_lost, player.loss_reason = True, "commander damage"
         else:
             continue
         applied.append(f"{player.name} loses ({player.loss_reason})")
