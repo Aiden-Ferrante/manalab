@@ -441,10 +441,16 @@ def parse_card(card: Card) -> Parsed:
 
 
 def with_effects(card: Card) -> Card:
-    """A copy of `card` carrying its parsed effects."""
+    """A copy of `card` carrying its parsed effects *and* what went unparsed.
+
+    Both halves travel together deliberately. Dropping `unparsed` here is what
+    let a card reach the engine looking fully understood while carrying clauses
+    the parser had failed on.
+    """
     from dataclasses import replace
 
-    return replace(card, effects=parse_card(card).effects)
+    parsed = parse_card(card)
+    return replace(card, effects=parsed.effects, unparsed=tuple(parsed.unparsed))
 
 
 # --- coverage reporting -------------------------------------------------

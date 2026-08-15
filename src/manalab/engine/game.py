@@ -145,6 +145,11 @@ class Game:
             for obj in state.battlefield():
                 obj.damage = 0
                 obj.deathtouched = False
+                # "Until end of turn" ends here (CR 514.2). Without this a pump
+                # would last the rest of the game, which is the lie the old
+                # counter-based modelling made permanent.
+                obj.power_mod = 0
+                obj.toughness_mod = 0
 
     # --- priority -------------------------------------------------------
 

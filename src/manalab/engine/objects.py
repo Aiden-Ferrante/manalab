@@ -38,6 +38,17 @@ class GameObject:
     would make a 1/1's hit indistinguishable from a real ten points when
     something later heals or pumps toughness."""
     counters: dict[str, int] = field(default_factory=dict)
+    power_mod: int = 0
+    toughness_mod: int = 0
+    """Power and toughness granted until end of turn, kept apart from counters.
+
+    Counters are symmetric by construction — a `+1/+1` counter moves both halves
+    by the same amount — so modelling every pump as counters cannot express
+    +3/-3, and collapsing it to one number turned Nameless Inversion, a removal
+    spell, into a permanent +3/+3 buff. It also made a -5/-0 shrink a no-op.
+
+    These are cleared in the cleanup step, which is what makes "until end of
+    turn" mean what it says rather than lasting the rest of the game."""
     summoning_sick: bool = False
     """Set when a permanent enters the battlefield, cleared during its
     controller's untap step. A creature with this cannot attack or pay {T},
@@ -77,12 +88,14 @@ class GameObject:
     @property
     def power(self) -> int:
         base = self.card.base_power
-        return (base or 0) + self.counters.get("+1/+1", 0) - self.counters.get("-1/-1", 0)
+        return ((base or 0) + self.counters.get("+1/+1", 0)
+                - self.counters.get("-1/-1", 0) + self.power_mod)
 
     @property
     def toughness(self) -> int:
         base = self.card.base_toughness
-        return (base or 0) + self.counters.get("+1/+1", 0) - self.counters.get("-1/-1", 0)
+        return ((base or 0) + self.counters.get("+1/+1", 0)
+                - self.counters.get("-1/-1", 0) + self.toughness_mod)
 
     @property
     def lethal_damage(self) -> bool:

@@ -40,6 +40,13 @@ class TargetKind(Enum):
     CREATURE_YOU_CONTROL = "creature_you_control"
     PLAYER = "player"
     OPPONENT = "opponent"
+    CONTROLLER = "controller"
+    """The spell's own controller — "you" — and nobody else.
+
+    Not a choice. Mapping "you" to PLAYER made a card's own drawback into a free
+    selection between the two players, and the pilot redirected it every time:
+    Sarkhan's Rage aimed its "deals 2 damage to you" at the opponent, so a
+    downside became extra reach."""
 
     SPELL = "spell"
     """An object on the stack. What a counterspell points at.
@@ -94,7 +101,7 @@ _PHRASES: dict[str, TargetKind] = {
     "target player": TargetKind.PLAYER,
     "target opponent": TargetKind.OPPONENT,
     "each opponent": TargetKind.OPPONENT,
-    "you": TargetKind.PLAYER,
+    "you": TargetKind.CONTROLLER,
     # The counterspell family. The parser drops the leading "target" for these,
     # so the phrases arrive bare. "spell unless its controller pays {3}" is
     # deliberately absent: it needs a pay-or-not decision from the spell's
@@ -191,6 +198,8 @@ def legal_targets(state: GameState, controller: int, spec: TargetSpec) -> list[T
         return players
     if spec.kind is TargetKind.OPPONENT:
         return [t for t in players if t.player != controller]
+    if spec.kind is TargetKind.CONTROLLER:
+        return [t for t in players if t.player == controller]
     return []
 
 

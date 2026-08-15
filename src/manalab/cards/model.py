@@ -94,6 +94,15 @@ class Card:
     enters_tapped: bool = False
     oracle_text: str = ""
     effects: tuple[Effect, ...] = ()
+    unparsed: tuple[str, ...] = ()
+    """Clauses the parser could not match to a verb.
+
+    Carried on the card rather than thrown away at parse time, because the
+    engine's own honesty check needs it: `fidelity` asked `resolve` which verbs
+    were unsupported, and `resolve` can only see the effects that *did* parse.
+    Text the parser never matched was therefore invisible to the one mechanism
+    whose job is to notice it, and 90 of 819 cards in the searchable pool were
+    called faithful while carrying clauses nobody had read."""
     power: str = ""
     toughness: str = ""
     """Printed as strings: Magic has `*`, `1+*` and `?`, none of which are ints."""

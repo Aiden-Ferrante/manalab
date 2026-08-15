@@ -226,13 +226,14 @@ def _apply_one(
             return
         power, toughness = amounts
         obj = state.objects[target.object_id]
-        # No "until end of turn" layer yet, so a pump is modelled as counters.
-        # That is wrong for the rest of the game and right for this combat, which
-        # is the trade this engine makes everywhere until continuous effects land.
-        if power == toughness and power > 0:
-            obj.add_counters("+1/+1", power)
-        elif power == toughness and power < 0:
-            obj.add_counters("-1/-1", -power)
-        else:
-            obj.add_counters("+1/+1", max(power, toughness))
+        # Each half moves independently, and only until end of turn — cleared in
+        # the cleanup step. This used to be modelled as counters, which are
+        # symmetric by construction: the two halves were collapsed with
+        # `max(power, toughness)` and applied to both. That made Nameless
+        # Inversion (+3/-3) a permanent +3/+3 buff instead of a removal spell,
+        # Chelonian Tackle (+0/+10) a 12/12, and every all-negative shrink
+        # (-5/-0) a silent no-op. 43 of the 102 pump cards in the searchable pool
+        # were executed wrongly, and `fidelity` reported all of them as faithful.
+        obj.power_mod += power
+        obj.toughness_mod += toughness
         log.append(f"{name} pumps {obj.card.name} {power:+}/{toughness:+}")

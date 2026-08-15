@@ -115,8 +115,16 @@ def assess(card: Card) -> Fidelity:
         # Asked of `resolve`, never re-derived here. A second list of implemented
         # verbs is a second thing to forget to update, and the failure mode is a
         # card admitted to the faithful pool that the engine cannot execute.
-        blocked = resolve.unsupported(card)
-        return Fidelity(card.name, blocked)
+        blocked = list(resolve.unsupported(card))
+        # `resolve` can only judge the verbs that parsed. Text the parser never
+        # matched produces no verb at all, so it was invisible here — the land
+        # and creature branches both ask `_residual_text` and this one asked
+        # nothing. That is how Pact of Negation entered the pool as a free,
+        # drawback-free counterspell: "pay {3}{U}{U}, or you lose the game" was
+        # dropped by the parser, so there was no verb for `resolve` to refuse.
+        if card.unparsed:
+            blocked.append("text the parser could not read")
+        return Fidelity(card.name, tuple(blocked))
 
     if "Legendary" in card.type_line:
         # The engine has no legend rule (see `sba`), so a second copy on the
