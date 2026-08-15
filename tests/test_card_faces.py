@@ -58,6 +58,22 @@ TOKEN = {
     "oracle_id": "tok", "name": "Soldier", "layout": "token",
     "type_line": "Token Creature — Soldier", "oracle_text": "",
 }
+# An Un-set card: a real printed object with a real type line, legal in nothing.
+# The type-line guards do not catch it — only the legality clause does.
+UNPLAYABLE = {
+    "oracle_id": "joke", "name": "Lander Rizzi", "layout": "normal",
+    "mana_cost": "{2}{U}", "cmc": 3.0, "type_line": "Legendary Creature — Lander Rogue",
+    "oracle_text": "It does something silly.", "power": "2", "toughness": "2",
+    "legalities": {"standard": "not_legal", "modern": "not_legal"},
+}
+# Legal in exactly one paper format and nothing else — the boundary case. One
+# format vouching for a card is enough, or every non-Standard card would vanish.
+ONLY_LEGACY = {
+    "oracle_id": "old", "name": "Ancient Thing", "layout": "normal",
+    "mana_cost": "{B}", "cmc": 1.0, "type_line": "Instant",
+    "oracle_text": "Do a legacy thing.",
+    "legalities": {"standard": "not_legal", "legacy": "legal"},
+}
 
 
 # read_json_auto infers the schema from the rows it is given, and the loader selects
@@ -67,7 +83,11 @@ TOKEN = {
 DEFAULTS = {
     "mana_cost": None, "cmc": 0.0, "oracle_text": None, "layout": "normal",
     "colors": [], "color_identity": [], "produced_mana": None,
-    "legalities": {"standard": "not_legal"}, "rarity": "common",
+    # The store keeps only cards legal in at least one paper format, so a fixture
+    # has to be a *playable* card or it is filtered out before any of these tests
+    # can see it. Modern-legal-but-not-standard is the ordinary case for most of
+    # the corpus, so it is the honest default.
+    "legalities": {"standard": "not_legal", "modern": "legal"}, "rarity": "common",
     "set_name": "Testing", "power": None, "toughness": None, "loyalty": None,
     "keywords": [], "card_faces": None,
 }
@@ -94,7 +114,8 @@ def record(rec: dict) -> str:
 def built(tmp_path):
     src = tmp_path / "cards.jsonl.gz"
     with gzip.open(src, "wt") as fh:
-        for rec in (SINGLE, VANILLA, TRANSFORM, SPLIT_FIVE, TOKEN):
+        for rec in (SINGLE, VANILLA, TRANSFORM, SPLIT_FIVE, TOKEN,
+                    UNPLAYABLE, ONLY_LEGACY):
             fh.write(record(rec) + "\n")
     db = tmp_path / "cards.duckdb"
     store.build(src, db)
@@ -221,3 +242,24 @@ def test_tags_are_optional_and_exploded(tmp_path):
         assert con.execute("SELECT card_count FROM tags").fetchone()[0] == 1
     finally:
         con.close()
+
+
+def test_a_card_legal_in_no_format_is_excluded_from_both_tables(built):
+    """The legality clause, not the type-line guards, is what catches this.
+
+    Un-set and playtest cards have ordinary type lines — `Legendary Creature —
+    Lander Rogue` looks exactly like a real card — so the only thing separating
+    them from the corpus is that no format will have them.
+    """
+    assert one(built, "SELECT count(*) FROM cards WHERE name = 'Lander Rizzi'") == 0
+    assert one(built, "SELECT count(*) FROM faces WHERE oracle_id = 'joke'") == 0
+
+
+def test_one_paper_format_is_enough_to_keep_a_card(built):
+    """Legal in Legacy and nothing else is still a card you can play.
+
+    The converse mistake — requiring Standard, or requiring several formats —
+    would silently delete most of Magic.
+    """
+    assert one(built, "SELECT count(*) FROM cards WHERE name = 'Ancient Thing'") == 1
+    assert one(built, "SELECT count(*) FROM faces WHERE oracle_id = 'old'") == 1

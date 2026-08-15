@@ -28,7 +28,7 @@ import sys
 
 import duckdb
 
-from manalab.cards.store import DEFAULT_DB, CardStore
+from manalab.cards.store import DEFAULT_DB, CardStore, is_playable
 
 BULK = "data/oracle_cards.jsonl.gz"
 
@@ -43,8 +43,15 @@ def norm(v: object) -> str:
 
 
 def playable(card: dict) -> bool:
-    t = card.get("type_line")
-    return t is not None and not t.startswith("Token") and not t.startswith("Card")
+    """Which source rows the store was supposed to keep.
+
+    Imported rather than restated. This was a third copy of the loader's WHERE
+    clause, and when the store gained a legality filter this script kept checking
+    against the old rule and reported 3,264 phantom diffs — a verifier failing
+    because it disagreed with the thing it verifies, not because anything was
+    wrong with the data.
+    """
+    return is_playable(card)
 
 
 def main() -> int:

@@ -26,6 +26,67 @@ _COLUMNS = """
     power, toughness, loyalty, keywords
 """
 
+# Paper formats only. The Arena-only ones — historic, timeless, gladiator,
+# alchemy, the brawls — are deliberately absent: an Alchemy rebalance is a
+# different card that no paper deck can contain, and it collides on name with
+# the card it rebalances.
+PAPER_FORMATS = (
+    "standard", "pioneer", "modern", "legacy", "pauper", "vintage", "penny",
+    "commander", "oathbreaker", "paupercommander", "duel", "oldschool",
+    "premodern", "predh",
+)
+
+
+def is_playable(record: Mapping) -> bool:
+    """The same rule as `_PLAYABLE`, for callers holding a raw Scryfall record.
+
+    Public because the exhaustive verifier has to decide which *source* rows the
+    store was supposed to keep, and it reads JSON rather than SQL. Two expressions
+    of one rule is a drift risk, so they share `PAPER_FORMATS` — the part that
+    actually changes — and this one is covered by tests.
+    """
+    type_line = record.get("type_line")
+    if type_line is None or type_line.startswith(("Token", "Card")):
+        return False
+    legalities = record.get("legalities") or {}
+    return any(legalities.get(fmt) in ("legal", "restricted") for fmt in PAPER_FORMATS)
+
+# What counts as a card you could actually play.
+#
+# The type-line guards drop tokens and art series. The legality clause is the
+# load-bearing half: it removes the 2,377 rows that are legal in no format at
+# all — Un-sets, Mystery Booster playtest cards, and the 589 objects that are
+# not cards in the first place (207 planes, 107 vanguards, 102 schemes, 87
+# emblems, 50 tokens, 20 hosts, 14 augments) — plus 887 digital-only Alchemy
+# rebalances.
+#
+# `restricted` counts as playable: a Vintage restricted card is one you may play
+# a single copy of. `banned` does not count on its own, but a card banned in one
+# format and legal in another survives on the second, which is why Black Lotus,
+# Chaos Orb and Shahrazad are all kept.
+#
+# Verified when this was written: **zero** modern-legal cards are dropped by it.
+#
+# One predicate, used by both the `cards` table and the `faces` CTE. They were
+# two copies of the same WHERE clause, which is one edit away from a store whose
+# faces and cards disagree about which cards exist.
+#
+# Formats are read through JSON rather than as struct fields. `legalities.pioneer`
+# is a *bind-time* error when the key is absent, so the whole build dies on any
+# source that does not carry all 23 formats — a Scryfall schema change, or a small
+# test fixture. `json_extract_string` returns NULL for a missing key instead, and
+# WHERE treats NULL as false, so an unknown format simply fails to vouch for a
+# card. Found by this repo's own tests, which build from exactly such a fixture.
+_PLAYABLE = (
+    "type_line IS NOT NULL"
+    " AND type_line NOT LIKE 'Token%'"
+    " AND type_line NOT LIKE 'Card%'"
+    " AND (" + " OR ".join(
+        f"json_extract_string(CAST(legalities AS JSON), '$.{fmt}')"
+        " IN ('legal', 'restricted')" for fmt in PAPER_FORMATS
+    ) + ")"
+)
+
 
 def build(json_path: Path, db_path: Path = DEFAULT_DB) -> int:
     """Load a Scryfall bulk export into DuckDB. Returns the row count.
@@ -51,10 +112,7 @@ def build(json_path: Path, db_path: Path = DEFAULT_DB) -> int:
                 maximum_object_size = 64000000,
                 ignore_errors = false
             )
-            -- Tokens, art series and emblems are not playable cards.
-            WHERE type_line IS NOT NULL
-              AND type_line NOT LIKE 'Token%'
-              AND type_line NOT LIKE 'Card%'
+            WHERE {_PLAYABLE}
             """,
             [str(json_path)],
         )
@@ -78,7 +136,7 @@ def build(json_path: Path, db_path: Path = DEFAULT_DB) -> int:
 # The alternative — join the faces' text into one string — would be wrong: Fire and
 # Ice are different spells, and a transformed side's abilities are not available
 # until it transforms.
-_FACE_SQL = """
+_FACE_SQL = f"""
 CREATE TABLE faces AS
 WITH src AS (
     SELECT *, CAST(card_faces AS STRUCT(
@@ -87,9 +145,7 @@ WITH src AS (
                 loyalty VARCHAR)[]) AS cf
     FROM read_json_auto(?, format = 'newline_delimited',
                         maximum_object_size = 64000000, ignore_errors = false)
-    WHERE type_line IS NOT NULL
-      AND type_line NOT LIKE 'Token%'
-      AND type_line NOT LIKE 'Card%'
+    WHERE {_PLAYABLE}
 )
 SELECT CAST(oracle_id AS VARCHAR)  AS oracle_id,
        unnest(range(0, len(cf)))   AS face_index,
@@ -180,8 +236,14 @@ def _build_face_types(con: duckdb.DuckDBPyConnection) -> None:
         t = parse_type_line(str(line or ""))
         parsed.append((str(oid), int(idx), list(t.supertypes), list(t.card_types),
                        list(t.subtypes), list(t.unknown), t.is_permanent))
-    con.executemany(
-        "INSERT INTO face_types VALUES (?, ?, ?, ?, ?, ?, ?)", parsed)
+    # `executemany` rejects an empty parameter list, so a corpus that filters down
+    # to nothing used to crash the build rather than produce an empty store. An
+    # empty result is a legitimate answer — a narrow fixture, or a filter nobody
+    # meant to make that strict — and it should be visible as zero rows, not as a
+    # stack trace three tables into the build.
+    if parsed:
+        con.executemany(
+            "INSERT INTO face_types VALUES (?, ?, ?, ?, ?, ?, ?)", parsed)
     con.execute("CREATE INDEX idx_face_types ON face_types(oracle_id)")
 
 
