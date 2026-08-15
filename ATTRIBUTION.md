@@ -11,6 +11,20 @@ It is free and requires no API key, but it is **not** public domain.
 - `data/` is gitignored. Do not redistribute the bulk files; point people at
   `manalab fetch` instead.
 
+## Forge (card scripts, validation oracle)
+
+`manalab.cards.forge` reads Forge's `res/cardsfolder` card scripts to check our
+own parse against a hand-encoded corpus. See ADR 0008.
+
+- Forge is **GPL-3.0**, and the card scripts carry no separate grant. Reading a
+  local clone to compare against is not distribution; **vendoring or shipping a
+  derived corpus is a copyleft question that has not been answered.** Do not
+  commit the scripts, and do not publish anything derived from them without
+  deciding this deliberately first.
+- `data/forge/` is gitignored, fetched on demand by `forge.fetch()`, and records
+  the upstream commit in `data/forge/provenance.json`.
+- Upstream: <https://github.com/Card-Forge/forge>.
+
 ## Wizards of the Coast
 
 manalab is unofficial Fan Content permitted under the
