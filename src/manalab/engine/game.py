@@ -22,6 +22,7 @@ import manalab.engine.combat as combat
 import manalab.engine.mana as mana
 import manalab.engine.resolve as resolve
 import manalab.engine.sba as sba
+import manalab.engine.statics as statics
 import manalab.engine.triggers as triggers
 from manalab.engine.agents import Agent
 from manalab.engine.objects import GameObject
@@ -169,6 +170,9 @@ class Game:
         passes = 0
 
         for _ in range(10_000):  # guards against an agent that never passes
+            # Before SBAs, because an anthem leaving can put a creature at
+            # zero toughness and that death is what SBAs are checking for.
+            statics.apply(state)
             sba.check(state)
             if sba.game_over(state):
                 return

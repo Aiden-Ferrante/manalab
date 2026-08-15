@@ -20,6 +20,7 @@ import re
 from dataclasses import dataclass
 
 import manalab.engine.resolve as resolve
+import manalab.engine.statics as statics
 import manalab.engine.triggers as triggers
 from manalab.cards.model import Card
 from manalab.engine.mana import MULTI_MANA
@@ -132,6 +133,7 @@ def assess(card: Card) -> Fidelity:
     # Anything it cannot recognise is still refused by name, which is what keeps
     # a half-understood trigger out of a search pool.
     reasons.extend(triggers.unsupported(card))
+    reasons.extend(statics.unsupported(card))
 
     if _residual_text(card, skip=_handled_lines(card)):
         reasons.append("rules text the engine does not execute")
@@ -150,6 +152,13 @@ def _handled_lines(card: Card) -> frozenset[str]:
     exists to prevent.
     """
     handled: set[str] = set()
+    for ability in card.abilities:
+        # A static ability whose whole effect `statics` applies is executed, not
+        # ignored — the same bar the triggered branch below uses.
+        if ability.kind == "static" and ability.effects and not ability.unparsed \
+                and statics.applicable(card) and not statics.unsupported(card) \
+                and ability.text:
+            handled.add(ability.text.strip().lower())
     for _, ability in triggers.watched_by(card):
         if ability.unparsed or not ability.effects:
             continue

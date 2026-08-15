@@ -71,6 +71,15 @@ class GameObject:
     """Keywords granted until end of turn, cleared in cleanup beside the P/T
     modifiers. Kept apart from the card's printed keywords so nothing has to
     mutate a frozen `Card` that other objects share."""
+    static_power: int = 0
+    static_toughness: int = 0
+    """Contribution from static abilities in play, recomputed by `statics.apply`.
+
+    Kept apart from `power_mod`, which is an until-end-of-turn effect that gets
+    cleared in cleanup. These are never cleared on a timer — they are rebuilt
+    from the battlefield, so an anthem leaving stops applying without anything
+    having to remember that it did."""
+
     is_commander: bool = False
     """Set for the object its owner named as their commander. Survives zone
     changes via `fresh_copy`, unlike everything else on this object — a
@@ -117,13 +126,15 @@ class GameObject:
     def power(self) -> int:
         base = self.card.base_power
         return ((base or 0) + self.counters.get("+1/+1", 0)
-                - self.counters.get("-1/-1", 0) + self.power_mod)
+                - self.counters.get("-1/-1", 0) + self.power_mod
+                + self.static_power)
 
     @property
     def toughness(self) -> int:
         base = self.card.base_toughness
         return ((base or 0) + self.counters.get("+1/+1", 0)
-                - self.counters.get("-1/-1", 0) + self.toughness_mod)
+                - self.counters.get("-1/-1", 0) + self.toughness_mod
+                + self.static_toughness)
 
     @property
     def lethal_damage(self) -> bool:
