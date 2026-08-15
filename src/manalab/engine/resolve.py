@@ -30,8 +30,17 @@ from manalab.engine.state import GameState
 from manalab.engine.zones import Zone
 
 IMPLEMENTED = frozenset(
-    {"deal_damage", "destroy", "draw", "gain_life", "pump", "counter_spell"}
+    {"deal_damage", "destroy", "draw", "gain_life", "pump", "counter_spell",
+     "put_counters", "shuffle"}
 )
+
+COUNTER_KINDS = frozenset({"+1/+1", "-1/-1"})
+"""Counter kinds that actually change anything here.
+
+A `charge` or `loyalty` counter can be *stored* on an object — `add_counters`
+takes any string — but nothing reads it, so a card that cares about one would
+be admitted and then quietly do nothing. Only the two `power`/`toughness`
+read are accepted; the rest are refused by name."""
 
 MASS_VERBS = frozenset({"deal_damage", "destroy"})
 """Verbs that may apply to a whole board.
@@ -79,6 +88,12 @@ def unsupported(card: Card) -> tuple[str, ...]:
             # anthem that also buffs the opponent, which is not an approximation
             # of the card, it is a different card.
             reasons.append(f"{effect.verb} over a whole board needs a duration model")
+        if effect.verb == "put_counters":
+            kind = str(effect.get("kind", ""))
+            if kind not in COUNTER_KINDS:
+                reasons.append(f"counter kind not modelled: {kind!r}")
+            if not isinstance(effect.get("amount", 1), int):
+                reasons.append(f"counter amount not a number: {effect.get('amount')!r}")
         if effect.verb == "pump" and _pump_amount(effect) is None:
             reasons.append(f"pump amount not understood: {effect.get('amount')!r}")
         if effect.verb in ("deal_damage", "draw", "gain_life") and \
@@ -251,6 +266,22 @@ def _apply_one(
         who = target.player if (target and target.is_player) else controller
         state.players[who].gain_life(amount)
         log.append(f"{name}: P{who} gains {amount}")
+
+    elif verb == "put_counters":
+        # Counters are permanent, unlike `pump` — that difference is the whole
+        # point of the two verbs, and it is why this one does not touch the
+        # until-end-of-turn modifiers.
+        if target is None or target.is_player:
+            return
+        obj = state.objects[target.object_id]
+        kind = str(effect.get("kind", "+1/+1"))
+        amount = int(effect.get("amount", 1))
+        obj.add_counters(kind, amount)
+        log.append(f"{name} puts {amount} {kind} on {obj.card.name}")
+
+    elif verb == "shuffle":
+        state.shuffle(controller)
+        log.append(f"{name}: P{controller} shuffles")
 
     elif verb == "pump":
         amounts = _pump_amount(effect)

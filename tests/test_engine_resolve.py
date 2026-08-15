@@ -397,3 +397,77 @@ def test_a_mass_pump_is_refused(store) -> None:
     reasons = resolve.unsupported(store.by_name("Languish"))
     assert reasons
     assert any("duration model" in r for r in reasons)
+
+
+# --- counters and shuffling ---------------------------------------------
+
+
+def _counter_spell(kind: str = "+1/+1", amount: int = 2) -> Card:
+    return Card("pc", "Counter Giver", parse_cost("{1}{G}"), "Instant",
+                oracle_text=f"Put {amount} {kind} counters on target creature.",
+                effects=(Effect("put_counters", (("amount", amount), ("kind", kind),
+                                                 ("target", "target creature"))),))
+
+
+def test_counters_change_power_and_toughness() -> None:
+    state = GameState.new([[], []])
+    bear = state.create(
+        Card("b", "Bear", parse_cost("{1}{G}"), "Creature — Bear",
+             power="2", toughness="2"),
+        owner=0, zone=Zone.BATTLEFIELD, quiet=True)
+    spell = state.create(_counter_spell(), owner=0, zone=Zone.STACK)
+
+    resolve.apply(state, spell, [T.Target(object_id=bear.id)], state.log)
+
+    assert (bear.power, bear.toughness) == (4, 4)
+
+
+def test_counters_are_permanent_unlike_a_pump() -> None:
+    """The difference between the two verbs. A pump is cleared in cleanup; a
+    counter is not, and modelling either as the other loses a real distinction."""
+    state = GameState.new([[], []])
+    bear = state.create(
+        Card("b", "Bear", parse_cost("{1}{G}"), "Creature — Bear",
+             power="2", toughness="2"),
+        owner=0, zone=Zone.BATTLEFIELD, quiet=True)
+    spell = state.create(_counter_spell(), owner=0, zone=Zone.STACK)
+    resolve.apply(state, spell, [T.Target(object_id=bear.id)], state.log)
+
+    bear.power_mod = bear.toughness_mod = 0      # what cleanup does
+    assert (bear.power, bear.toughness) == (4, 4), "counters were cleared like a pump"
+
+
+def test_minus_counters_can_kill() -> None:
+    state = GameState.new([[], []])
+    bear = state.create(
+        Card("b", "Bear", parse_cost("{1}{G}"), "Creature — Bear",
+             power="2", toughness="2"),
+        owner=0, zone=Zone.BATTLEFIELD, quiet=True)
+    spell = state.create(_counter_spell("-1/-1", 2), owner=0, zone=Zone.STACK)
+    resolve.apply(state, spell, [T.Target(object_id=bear.id)], state.log)
+    sba.check(state)
+
+    assert state.battlefield(0) == [], "a 2/2 with two -1/-1 counters should die"
+
+
+def test_a_counter_kind_nothing_reads_is_refused() -> None:
+    """`add_counters` stores any string, so a charge counter would be accepted
+    and then quietly do nothing. Refusing is the honest outcome."""
+    card = _counter_spell("charge", 1)
+    reasons = resolve.unsupported(card)
+    assert any("counter kind not modelled" in r for r in reasons), reasons
+
+
+def test_shuffle_reorders_the_library() -> None:
+    cards = [Card(str(i), f"C{i}", parse_cost("{G}"), "Creature — Elf",
+                  power="1", toughness="1") for i in range(30)]
+    state = GameState.new([cards, []], seed=4)
+    before = [o.card.name for o in state.library(0)]
+
+    spell = state.create(
+        Card("s", "Shuffler", parse_cost("{G}"), "Instant",
+             oracle_text="Shuffle.", effects=(Effect("shuffle"),)),
+        owner=0, zone=Zone.STACK)
+    resolve.apply(state, spell, [], state.log)
+
+    assert [o.card.name for o in state.library(0)] != before
