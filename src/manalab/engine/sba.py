@@ -7,8 +7,8 @@ another below zero toughness, and a single pass would leave the game in an
 illegal state.
 
 Implemented: player loss (life, empty draw, poison), creature death by lethal
-damage or non-positive toughness, and planeswalkers at zero loyalty. Not yet:
-legend rule, auras with illegal attachments, token cleanup.
+damage or non-positive toughness, planeswalkers at zero loyalty, and the
+legend rule. Not yet: auras with illegal attachments, token cleanup.
 """
 
 from __future__ import annotations
@@ -69,6 +69,39 @@ def _one_pass(state: GameState) -> list[str]:
         if "Planeswalker" in obj.types and obj.counters.get("loyalty", 0) <= 0:
             state.move(obj, Zone.GRAVEYARD)
             applied.append(f"{obj.card.name} dies (no loyalty)")
+
+    applied.extend(_legend_rule(state))
+    return applied
+
+
+def _legend_rule(state: GameState) -> list[str]:
+    """704.5j — one legendary permanent per name per player.
+
+    Without this a search happily plays four copies of a legend it should play
+    one of, because extra copies are strictly better here and strictly worse in
+    Magic. That is not a hypothetical: a GA run came back with three copies of a
+    legendary 9/7, and `fidelity` had to refuse all 309 legends in the mono-green
+    pool — every possible commander among them — to keep them out.
+
+    **The choice of which copy survives is not offered to the agent.** The rules
+    let the controller pick; this keeps the oldest (lowest id) and bins the rest.
+    That is a real approximation, and it is only visible when the copies differ —
+    one is tapped, damaged, or carrying counters. It is deterministic, which
+    matters more here: common random numbers require that the same seed produce
+    the same game.
+    """
+    applied: list[str] = []
+    seen: dict[tuple[int, str], int] = {}
+
+    for obj in sorted(state.battlefield(), key=lambda o: o.id):
+        if "Legendary" not in obj.types:
+            continue
+        key = (obj.controller, obj.name)
+        if key not in seen:
+            seen[key] = obj.id
+            continue
+        state.move(obj, Zone.GRAVEYARD)
+        applied.append(f"{obj.card.name} dies (legend rule)")
 
     return applied
 

@@ -262,10 +262,15 @@ def test_zero_toughness_creatures_never_reach_a_gauntlet_deck() -> None:
         assert "Doomed" not in {c.name for c in deck.cards}
 
 
-def test_legendary_cards_are_set_aside() -> None:
-    """No legend rule in the engine, so extra copies stack and search abuses it."""
+def test_legendary_cards_are_no_longer_set_aside() -> None:
+    """`sba` enforces 704.5j now, so a legend is a card like any other.
+
+    This test previously asserted the opposite. It was encoding a *workaround* —
+    legends were refused because the engine could not bin the second copy — and
+    the workaround is what made every commander unsearchable. The rule it was
+    standing in for is now implemented and tested in `test_engine_state.py`.
+    """
     legend = Card("l", "Legend", parse_cost("{2}{G}"), "Legendary Creature — Elk",
                   power="9", toughness="7")
     report = fidelity.assess(legend)
-    assert not report.faithful
-    assert any("legend" in r.lower() for r in report.reasons)
+    assert report.faithful, report.reasons

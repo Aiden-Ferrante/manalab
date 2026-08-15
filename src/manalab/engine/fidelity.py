@@ -126,13 +126,11 @@ def assess(card: Card) -> Fidelity:
             blocked.append("text the parser could not read")
         return Fidelity(card.name, tuple(blocked))
 
-    if "Legendary" in card.type_line:
-        # The engine has no legend rule (see `sba`), so a second copy on the
-        # battlefield survives when the real game would bin it. That makes extra
-        # copies strictly better here and strictly worse in Magic — a search will
-        # happily play four of a legend it should play one of. Found exactly this
-        # way: a GA run came back with three copies of a legendary 9/7.
-        reasons.append("legendary; the engine has no legend rule, so copies stack")
+    # Legendary permanents used to be refused here, because without the legend
+    # rule a second copy survived and extra copies were strictly better in the
+    # engine and strictly worse in Magic. `sba` now enforces 704.5j, so they are
+    # admitted — which is what makes commanders expressible at all, since every
+    # commander is legendary.
 
     if not card.is_creature:
         reasons.append("non-creature permanent; sits on the battlefield inertly")

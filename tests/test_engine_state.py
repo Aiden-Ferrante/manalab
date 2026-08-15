@@ -227,3 +227,82 @@ def test_clone_preserves_the_random_stream() -> None:
     a.shuffle(0)
     b.shuffle(0)
     assert [o.card.name for o in a.library(0)] == [o.card.name for o in b.library(0)]
+
+
+# --- the legend rule (CR 704.5j) ----------------------------------------
+
+
+def _legend(name: str = "Yeva, Nature's Herald"):
+    from manalab.cards.mana import parse_cost
+    from manalab.cards.model import Card
+
+    return Card(name, name, parse_cost("{3}{G}"),
+                "Legendary Creature — Elf Advisor", power="4", toughness="4")
+
+
+def test_a_second_copy_of_a_legend_dies():
+    """Without this, extra copies are strictly better in the engine and
+    strictly worse in Magic — a GA once returned three copies of a legend."""
+    from manalab.engine import sba
+    from manalab.engine.state import GameState
+    from manalab.engine.zones import Zone
+
+    state = GameState.new([[], []])
+    first = state.create(_legend(), owner=0, zone=Zone.BATTLEFIELD)
+    second = state.create(_legend(), owner=0, zone=Zone.BATTLEFIELD)
+
+    events = sba.check(state)
+
+    survivors = [o for o in state.battlefield(0) if "Legendary" in o.types]
+    assert len(survivors) == 1, "the legend rule did not fire"
+    assert survivors[0].id == first.id, "the oldest copy is the one kept"
+    assert any("legend rule" in e for e in events)
+    assert second.id not in {o.id for o in state.battlefield()}
+
+
+def test_two_players_may_each_control_the_same_legend():
+    """704.5j is per player. Only one player having it is not the rule."""
+    from manalab.engine import sba
+    from manalab.engine.state import GameState
+    from manalab.engine.zones import Zone
+
+    state = GameState.new([[], []])
+    state.create(_legend(), owner=0, zone=Zone.BATTLEFIELD)
+    state.create(_legend(), owner=1, zone=Zone.BATTLEFIELD)
+
+    sba.check(state)
+
+    assert len(state.battlefield(0)) == 1
+    assert len(state.battlefield(1)) == 1
+
+
+def test_different_legends_coexist():
+    from manalab.engine import sba
+    from manalab.engine.state import GameState
+    from manalab.engine.zones import Zone
+
+    state = GameState.new([[], []])
+    state.create(_legend("Azusa, Lost but Seeking"), owner=0, zone=Zone.BATTLEFIELD)
+    state.create(_legend("Yeva, Nature's Herald"), owner=0, zone=Zone.BATTLEFIELD)
+
+    sba.check(state)
+
+    assert len(state.battlefield(0)) == 2, "different names are not the same legend"
+
+
+def test_a_nonlegendary_creature_may_have_duplicates():
+    from manalab.cards.mana import parse_cost
+    from manalab.cards.model import Card
+    from manalab.engine import sba
+    from manalab.engine.state import GameState
+    from manalab.engine.zones import Zone
+
+    bear = Card("bear", "Grizzly Bears", parse_cost("{1}{G}"),
+                "Creature — Bear", power="2", toughness="2")
+    state = GameState.new([[], []])
+    for _ in range(4):
+        state.create(bear, owner=0, zone=Zone.BATTLEFIELD)
+
+    sba.check(state)
+
+    assert len(state.battlefield(0)) == 4, "the legend rule caught a non-legend"
