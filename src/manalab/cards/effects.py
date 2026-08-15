@@ -19,7 +19,7 @@ engine's job, and the engine implements a subset of these verbs.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Iterable, Sequence
 
 from manalab.cards.model import Ability, Card, Effect
@@ -414,15 +414,42 @@ def parse_card(card: Card) -> Parsed:
     straight from a Scryfall row, as the tests do, never went through the store.
     """
     if not card.faces:
-        return parse_text(card.oracle_text, card.name, card.keywords)
+        parsed = parse_text(card.oracle_text, card.name, card.keywords)
+        return replace(parsed, abilities=_classify(card, parsed.abilities))
 
     abilities: list[Ability] = []
     for face in card.faces:
         if face.oracle_text.strip():
             abilities.extend(
                 parse_text(face.oracle_text, face.name, card.keywords).abilities)
-    return Parsed(card_name=card.name, abilities=tuple(abilities),
+    return Parsed(card_name=card.name, abilities=_classify(card, tuple(abilities)),
                   keywords=frozenset(card.keywords))
+
+
+def _classify(card: Card, abilities: tuple[Ability, ...]) -> tuple[Ability, ...]:
+    """Mark a permanent's plain lines as `static` rather than `spell`.
+
+    `parse_text` reads one line at a time and cannot know what it is on. A line
+    with no trigger and no activation cost is a *spell effect* on an instant —
+    "deal 3 damage" — and a *static ability* on a permanent: "Creatures you
+    control get +1/+1" is not something that happens once when it resolves.
+
+    Nothing ever produced `static` before this, though `Ability.kind` has always
+    documented it, so every anthem and every lord was tagged `spell`. The engine
+    then resolved the permanent onto the battlefield and dropped the ability
+    entirely, which is a large part of why permanents were the class that
+    silently did nothing.
+
+    This does not *implement* static abilities. It names them, so `fidelity` can
+    refuse them honestly instead of mistaking them for spell effects that simply
+    never fired.
+    """
+    if not card.is_permanent:
+        return abilities
+    return tuple(
+        replace(ability, kind="static") if ability.kind == "spell" else ability
+        for ability in abilities
+    )
 
 
 def with_effects(card: Card) -> Card:
