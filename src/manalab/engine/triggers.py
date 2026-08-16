@@ -55,6 +55,26 @@ one object something happened to."""
 
 
 @dataclass(frozen=True)
+class Watch:
+    """What a triggered ability is watching for.
+
+    `is_self` is the original family: the permanent's own event. The scoped
+    fields are the ChangesZone family — "a land you control enters" (landfall's
+    expansion), "another creature you control dies" — where the subject is some
+    OTHER permanent, filtered by type, by controller, and by whether the watcher
+    itself counts."""
+
+    kind: EventKind
+    is_self: bool = True
+    subject: str = ""
+    """Card type the subject must have: land, creature, artifact, permanent."""
+    yours: bool = False
+    """The subject's controller must be the watcher's controller."""
+    excludes_self: bool = False
+    """"Another": the watcher's own event does not count."""
+
+
+@dataclass(frozen=True)
 class Event:
     """Something that happened, which abilities may be watching for."""
 
@@ -73,6 +93,12 @@ _SELF_ENTERS = re.compile(
     r"^(?:this|cardname)(?:\s+\w+)?\s+enters(?:\s+the\s+battlefield)?$", re.I)
 _SELF_DIES = re.compile(
     r"^(?:this|cardname)(?:\s+\w+)?\s+dies$", re.I)
+# "a land you control enters", "another creature you control dies",
+# "a creature dies" — a subject that is not the ability's own source.
+_SUBJECT = re.compile(
+    r"^(?:whenever )?(a|an|another) (land|creature|artifact|permanent)"
+    r"( you control)? (enters|dies)(?: the battlefield)?$", re.I)
+
 _SELF_ATTACKS = re.compile(
     r"^(?:this|cardname)(?:\s+\w+)?\s+attacks$", re.I)
 _SELF_COMBAT_DAMAGE = re.compile(
@@ -88,8 +114,8 @@ _STEPS = (
 )
 
 
-def parse_trigger(text: str) -> EventKind | None:
-    """The event this condition fires on, or `None` to refuse it.
+def parse_trigger(text: str) -> Watch | None:
+    """The watch this condition describes, or `None` to refuse it.
 
     `None` is the important return. Every caller treats it as "this card is not
     modelled" and reports it by name, exactly as an unrecognised target phrase
@@ -99,28 +125,38 @@ def parse_trigger(text: str) -> EventKind | None:
     if not condition:
         return None
     if _SELF_ENTERS.match(condition):
-        return EventKind.ENTERS
+        return Watch(EventKind.ENTERS)
     if _SELF_DIES.match(condition):
-        return EventKind.DIES
+        return Watch(EventKind.DIES)
     if _SELF_ATTACKS.match(condition):
-        return EventKind.ATTACKS
+        return Watch(EventKind.ATTACKS)
     if _SELF_COMBAT_DAMAGE.match(condition):
-        return EventKind.COMBAT_DAMAGE_TO_PLAYER
+        return Watch(EventKind.COMBAT_DAMAGE_TO_PLAYER)
     for pattern, kind in _STEPS:
         if pattern.match(condition):
-            return kind
+            return Watch(kind, is_self=False)
+    scoped = _SUBJECT.match(condition)
+    if scoped:
+        article, subject, yours, verb = scoped.groups()
+        return Watch(
+            EventKind.ENTERS if verb == "enters" else EventKind.DIES,
+            is_self=False,
+            subject=subject,
+            yours=bool(yours),
+            excludes_self=article == "another",
+        )
     return None
 
 
-def watched_by(card: Card) -> tuple[tuple[EventKind, Ability], ...]:
+def watched_by(card: Card) -> tuple[tuple[Watch, Ability], ...]:
     """Every triggered ability on `card` this engine can honour."""
-    out: list[tuple[EventKind, Ability]] = []
+    out: list[tuple[Watch, Ability]] = []
     for ability in card.abilities:
         if ability.kind != "triggered":
             continue
-        kind = parse_trigger(ability.trigger)
-        if kind is not None:
-            out.append((kind, ability))
+        watch = parse_trigger(ability.trigger)
+        if watch is not None:
+            out.append((watch, ability))
     return tuple(out)
 
 
@@ -134,5 +170,6 @@ def unsupported(card: Card) -> tuple[str, ...]:
 
 
 def fired_by(card: Card, event: EventKind) -> tuple[Ability, ...]:
-    """The abilities on `card` that `event` sets off."""
-    return tuple(ability for kind, ability in watched_by(card) if kind is event)
+    """The self-watching abilities on `card` that `event` sets off."""
+    return tuple(ability for watch, ability in watched_by(card)
+                 if watch.kind is event and watch.is_self)

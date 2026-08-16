@@ -231,25 +231,48 @@ class Game:
             return
         pending, state.events = state.events, []
 
+        def fire(watcher, ability) -> None:
+            entry = state.create(watcher.card, owner=watcher.owner,
+                                 zone=Zone.STACK, controller=watcher.controller)
+            entry.trigger = ability
+            entry.source_id = watcher.id
+            state.log.append(f"trigger: {watcher.card.name} ({event.kind.value})")
+
         for event in pending:
             if event.kind in triggers.STEP_EVENTS:
                 # Happened to a player, so everything they control is watching.
-                sources = [o for o in state.battlefield(event.controller)]
-            else:
-                one = state.objects.get(event.object_id)
-                if one is None:
-                    continue    # it moved again before triggers were collected
-                sources = [one]
+                for watcher in state.battlefield(event.controller):
+                    for watch, ability in triggers.watched_by(watcher.card):
+                        if watch.kind is event.kind and not watch.is_self:
+                            fire(watcher, ability)
+                continue
 
-            for source in sources:
-                for ability in triggers.fired_by(source.card, event.kind):
-                    entry = state.create(source.card, owner=source.owner,
-                                         zone=Zone.STACK,
-                                         controller=event.controller)
-                    entry.trigger = ability
-                    entry.source_id = source.id
-                    state.log.append(
-                        f"trigger: {source.card.name} ({event.kind.value})")
+            subject = state.objects.get(event.object_id)
+            if subject is None:
+                continue        # it moved again before triggers were collected
+
+            # The thing's own event — enters, dies, attacks — fires from the
+            # subject itself, wherever it now is (a dies trigger's source is
+            # already in the graveyard).
+            for ability in triggers.fired_by(subject.card, event.kind):
+                fire(subject, ability)
+
+            # The ChangesZone family: everything on the battlefield watching
+            # for events like this one. "A land you control enters" is checked
+            # against the subject's type and the DEAD-OR-ENTERING thing's
+            # controller (the event's), not the watcher's zone history.
+            for watcher in state.battlefield():
+                for watch, ability in triggers.watched_by(watcher.card):
+                    if watch.kind is not event.kind or watch.is_self \
+                            or not watch.subject:
+                        continue
+                    if watch.subject.capitalize() not in subject.card.type_line:
+                        continue
+                    if watch.yours and event.controller != watcher.controller:
+                        continue
+                    if watch.excludes_self and watcher.id == subject.id:
+                        continue
+                    fire(watcher, ability)
 
     def _apply(self, player: int, action: A.Action) -> None:
         state = self.state

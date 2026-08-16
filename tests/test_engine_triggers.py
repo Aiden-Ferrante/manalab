@@ -58,19 +58,20 @@ def game_with(library_size: int = 10) -> tuple[GameState, Game]:
     "this land enters", "this artifact enters", "This creature enters.",
 ])
 def test_the_self_enters_family_is_recognised(condition):
-    assert triggers.parse_trigger(condition) is EventKind.ENTERS
+    watch = triggers.parse_trigger(condition)
+    assert watch.kind is EventKind.ENTERS and watch.is_self
 
 
 @pytest.mark.parametrize("condition", ["this creature dies", "CARDNAME dies"])
 def test_the_self_dies_family_is_recognised(condition):
-    assert triggers.parse_trigger(condition) is EventKind.DIES
+    watch = triggers.parse_trigger(condition)
+    assert watch.kind is EventKind.DIES and watch.is_self
 
 
 @pytest.mark.parametrize("condition", [
-    "a land you control enters",          # someone else's event, not its own
-    "another creature you control dies",  # needs a subject distinct from the source
     "you cast a noncreature spell",       # happens on the stack, not the battlefield
     "the beginning of each opponent's upkeep",
+    "one or more creatures deal damage",
     "",
 ])
 def test_everything_else_is_refused_rather_than_guessed(condition):
@@ -80,12 +81,12 @@ def test_everything_else_is_refused_rather_than_guessed(condition):
 
 
 def test_an_unrecognised_trigger_makes_its_card_unfaithful():
-    text = "Whenever a land you control enters, draw a card."
-    landfall = Ability(kind="triggered", text=text,
-                       effects=(Effect("draw", (("amount", 1),)),),
-                       trigger="a land you control enters")
-    card = Card("u", "Landfaller", parse_cost("{1}{G}"), "Creature — Elf",
-                power="1", toughness="1", abilities=(landfall,),
+    text = "Whenever you cast a noncreature spell, draw a card."
+    caster = Ability(kind="triggered", text=text,
+                     effects=(Effect("draw", (("amount", 1),)),),
+                     trigger="you cast a noncreature spell")
+    card = Card("u", "Spellwatcher", parse_cost("{1}{G}"), "Creature — Elf",
+                power="1", toughness="1", abilities=(caster,),
                 oracle_text=text)
     report = fidelity.assess(card)
     assert not report.faithful
@@ -231,7 +232,7 @@ def test_a_token_entering_fires_enters_triggers():
     ("the beginning of combat on your turn", EventKind.BEGIN_COMBAT),
 ])
 def test_the_step_and_combat_families_are_recognised(condition, kind):
-    assert triggers.parse_trigger(condition) is kind
+    assert triggers.parse_trigger(condition).kind is kind
 
 
 def upkeeper() -> Card:
@@ -303,3 +304,102 @@ def test_attacking_fires_an_attack_trigger():
     assert len(state.zone(Zone.STACK)) == 1
     game._resolve_top()
     assert len(state.hand(0)) == 1
+
+
+# --- the ChangesZone family: subjects other than the source --------------
+
+
+def landfall_watcher() -> Card:
+    text = "Whenever a land you control enters, you gain 2 life."
+    ability = Ability(kind="triggered", text=text,
+                      effects=(Effect("gain_life", (("amount", 2),)),),
+                      trigger="a land you control enters")
+    return Card("lf", "Grazing Watcher", parse_cost("{1}{G}"),
+                "Creature — Antelope", power="2", toughness="2",
+                oracle_text=text, abilities=(ability,))
+
+
+def death_watcher() -> Card:
+    text = "Whenever another creature you control dies, draw a card."
+    ability = Ability(kind="triggered", text=text,
+                      effects=(Effect("draw", (("amount", 1),)),),
+                      trigger="another creature you control dies")
+    return Card("dw", "Death Watcher", parse_cost("{1}{B}"),
+                "Creature — Bat", power="1", toughness="1",
+                oracle_text=text, abilities=(ability,))
+
+
+def test_your_land_entering_fires_the_watcher():
+    state, game = game_with()
+    state.create(landfall_watcher(), owner=0, zone=Zone.BATTLEFIELD, quiet=True)
+    state.create(FOREST, owner=0, zone=Zone.BATTLEFIELD)
+
+    game._collect_triggers()
+    assert len(state.zone(Zone.STACK)) == 1
+    game._resolve_top()
+    assert state.players[0].life == 22
+
+
+def test_an_opponents_land_does_not_fire_yours():
+    """"You control" filters on the subject's controller, not the watcher's
+    presence."""
+    state, game = game_with()
+    state.create(landfall_watcher(), owner=0, zone=Zone.BATTLEFIELD, quiet=True)
+    state.create(FOREST, owner=1, zone=Zone.BATTLEFIELD)
+    game._collect_triggers()
+    assert state.zone(Zone.STACK) == []
+
+
+def test_a_fetched_land_fires_landfall():
+    """The composition the family exists for: Rampant Growth's fetch enters a
+    land through `state.move`, and the watcher sees it like any other entry."""
+    from manalab.engine import resolve
+
+    state, game = game_with()
+    state.create(landfall_watcher(), owner=0, zone=Zone.BATTLEFIELD, quiet=True)
+    spell = state.create(
+        Card("rg", "Rampant Growth", parse_cost("{1}{G}"), "Sorcery",
+             effects=(Effect("search_library", (
+                 ("what", "a basic land card, put it onto the battlefield "
+                          "tapped, then shuffle"),)),)),
+        owner=0, zone=Zone.STACK)
+    state.events.clear()
+    resolve.apply(state, spell, [], state.log)
+
+    game._collect_triggers()
+    assert len(state.zone(Zone.STACK)) >= 1, "the fetch's land entry went unseen"
+
+
+def test_another_creatures_death_fires_the_watcher():
+    state, game = game_with()
+    state.create(death_watcher(), owner=0, zone=Zone.BATTLEFIELD, quiet=True)
+    bear = state.create(
+        Card("b", "Grizzly Bears", parse_cost("{1}{G}"), "Creature — Bear",
+             power="2", toughness="2"),
+        owner=0, zone=Zone.BATTLEFIELD, quiet=True)
+    state.move(bear, Zone.GRAVEYARD)
+
+    game._collect_triggers()
+    assert len(state.zone(Zone.STACK)) == 1
+    game._resolve_top()
+    assert len(state.hand(0)) == 1
+
+
+def test_another_excludes_the_watchers_own_death():
+    state, game = game_with()
+    watcher = state.create(death_watcher(), owner=0, zone=Zone.BATTLEFIELD,
+                           quiet=True)
+    state.move(watcher, Zone.GRAVEYARD)
+    game._collect_triggers()
+    assert state.zone(Zone.STACK) == []
+
+
+def test_a_creature_entering_is_not_a_land_entering():
+    state, game = game_with()
+    state.create(landfall_watcher(), owner=0, zone=Zone.BATTLEFIELD, quiet=True)
+    state.create(
+        Card("b", "Grizzly Bears", parse_cost("{1}{G}"), "Creature — Bear",
+             power="2", toughness="2"),
+        owner=0, zone=Zone.BATTLEFIELD)
+    game._collect_triggers()
+    assert state.zone(Zone.STACK) == []
