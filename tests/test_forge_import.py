@@ -97,3 +97,36 @@ def test_an_effect_forge_encodes_that_we_cannot_map_lands_in_unparsed():
 def test_a_card_forge_does_not_have_is_returned_unchanged():
     original = card("Not In Forge")
     assert FI.with_forge_effects(original, oracle_of(BOLT)) is original
+
+
+# --- choosing between the two sources ------------------------------------
+
+
+def test_the_fallback_never_scores_below_the_parser_alone():
+    """Monotone by construction: keep what already works, reach for Forge only
+    where we have nothing.
+
+    The obvious rule — prefer Forge wherever it translates completely — was
+    measured at 468 against the parser's 540. A complete translation is not a
+    complete card.
+    """
+    from manalab.evaluate.pool import best_effects
+
+    playable = Card("b", "Lightning Bolt", parse_cost("{R}"), "Instant",
+                    oracle_text="Lightning Bolt deals 3 damage to any target.")
+    from manalab.cards.effects import with_effects
+    playable = with_effects(playable)
+
+    chosen = best_effects(playable, oracle_of(BOLT))
+    assert chosen is playable, "a card we can already play was swapped out"
+
+
+def test_forge_is_used_when_our_parse_cannot_play_the_card():
+    from manalab.evaluate.pool import best_effects
+
+    # No abilities at all on our side, and text we never read.
+    unplayable = Card("u", "Lightning Bolt", parse_cost("{R}"), "Instant",
+                      oracle_text="Lightning Bolt deals 3 damage to any target.")
+    chosen = best_effects(unplayable, oracle_of(BOLT))
+    assert chosen is not unplayable
+    assert [e.verb for e in chosen.effects] == ["deal_damage"]

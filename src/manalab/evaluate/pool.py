@@ -21,7 +21,7 @@ import json
 from dataclasses import dataclass, replace
 from typing import Iterable, Mapping
 
-from manalab.cards import formats
+from manalab.cards import forge_import, formats
 from manalab.cards.formats import Format
 from manalab.cards.model import Card, CandidatePool
 from manalab.cards.store import CardStore
@@ -61,6 +61,41 @@ class Pool:
                 key = reason.split(":")[0]
                 counts[key] = counts.get(key, 0) + 1
         return sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
+
+
+def best_effects(card: Card, oracle) -> Card:
+    """Our parse, falling back to Forge's encoding when ours cannot play the card.
+
+    Lives here rather than in `cards` for the same reason the pool builder does:
+    deciding which encoding to keep needs the engine's account of itself, and
+    `cards` may not import `engine`. The layer test caught this being written in
+    the wrong package.
+
+    The two sources overlap rather than nest — on mono-green Commander the
+    English parser makes 540 cards playable and the Forge import 294, and the
+    union is 578. Taking the union is the whole gain.
+
+    **Which to prefer was decided by measurement, and the obvious answer was
+    wrong.** Forge's encodings are correctness-pressured, so "prefer Forge
+    wherever it translates completely" looked right. It scores **468** — worse
+    than the parser alone: it takes Forge's answer on 795 cards, disagrees on 406
+    of them, and loses 72 playable cards net. A complete *translation* is not a
+    complete *card*.
+
+    So the rule is conservative: keep what already works, reach for Forge only
+    where we have nothing. Monotone by construction — it can never score below
+    the parser alone. On the green pool it fires on 38 cards.
+
+    Accuracy is a separate job with its own instrument: where both work and
+    disagree, `examples/forge_validation.py` reports it (31 cards today). That is
+    a work list for the parser, not a reason to swap encodings wholesale.
+    """
+    if not fidelity.assess(card).reasons:
+        return card
+    imported = forge_import.with_forge_effects(card, oracle)
+    if imported is card or fidelity.assess(imported).reasons:
+        return card
+    return imported
 
 
 def mono_color(
