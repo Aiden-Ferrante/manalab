@@ -90,15 +90,26 @@ class Pattern:
     numeric: frozenset[str] = frozenset()
 
     def match(self, clause: str) -> Effect | None:
-        found = self.regex.search(clause)
-        if not found:
-            return None
-        values: list[tuple[str, str | int]] = []
-        for name, raw in zip(self.params, found.groups()):
-            if raw is None:
-                continue
-            values.append((name, quantity(raw) if name in self.numeric else raw.strip()))
-        return Effect(verb=self.verb, params=tuple(values))
+        first = self.matches(clause)
+        return first[0][0] if first else None
+
+    def matches(self, clause: str) -> list[tuple[Effect, tuple[int, int]]]:
+        """Every occurrence in the clause, with the span it consumed.
+
+        `search` saw only the first: "You draw two cards, then each other player
+        draws a card" produced one draw effect, and the second half vanished
+        without reaching `unparsed`. The span is what lets the caller notice the
+        parts of a clause no pattern accounted for.
+        """
+        out: list[tuple[Effect, tuple[int, int]]] = []
+        for found in self.regex.finditer(clause):
+            values: list[tuple[str, str | int]] = []
+            for name, raw in zip(self.params, found.groups()):
+                if raw is None:
+                    continue
+                values.append((name, quantity(raw) if name in self.numeric else raw.strip()))
+            out.append((Effect(verb=self.verb, params=tuple(values)), found.span()))
+        return out
 
 
 def _p(verb: str, pattern: str, *params: str, numeric: Iterable[str] = ()) -> Pattern:
@@ -272,6 +283,20 @@ named ability whose meaning is defined in the rules."""
 
 _KEYWORD_PARAM = re.compile(r"^\s*(?:[—\-:]\s*)?(.*)$", re.S)
 
+# What a keyword's parameter may look like: a number ("Crew 3"), a mana cost
+# ("Equip {1}"), a number-then-cost ("Suspend 4—{1}{U}"), or plain words with no
+# punctuation ("Enchant creature", "Ward—Discard a card"). Anything with a comma
+# or a period is not a parameter — it is the rest of the card. The old code
+# swallowed it whole: 297 lines absorbed into an inert `param`, none reaching
+# `unparsed`, so cards read as fully parsed while carrying text nobody kept.
+# "Scry X, where X is …, then draw three cards" was recorded as scry.
+_PARAM_SHAPE = re.compile(
+    r"(?:\d+|x)"
+    r"|(?:\{[^}]+\})+"
+    r"|(?:\d+\s*[—\-]\s*(?:\{[^}]+\})+)"
+    r"|(?:[a-z][a-z0-9' \-]*)",   # "Pay 1 life", "Enchant creature"
+    re.I)
+
 
 def _keyword_ability(line: str, known: set[str]) -> Ability | None:
     """Recognise a keyword ability line, with or without a parameter.
@@ -300,6 +325,14 @@ def _keyword_ability(line: str, known: set[str]) -> Ability | None:
                 return None
             if tail[0] in " —-:{":
                 param = _KEYWORD_PARAM.match(tail).group(1).strip(" .")
+                if not param:
+                    return Ability(kind="keyword", text=line)
+                if not _PARAM_SHAPE.fullmatch(param):
+                    # Not a parameter. A keyword ACTION with trailing rules text
+                    # ("Scry X, …, then draw three cards") or a compound cost
+                    # falls through to ordinary parsing, where its clauses are
+                    # matched or land in `unparsed` — honestly, either way.
+                    return None
                 return Ability(
                     kind="keyword",
                     text=line,
@@ -383,6 +416,35 @@ def _parse_line(line: str, known_keywords: set[str]) -> Ability:
     return Ability("spell", line, effects, unparsed)
 
 
+_DURATION = re.compile(r"\buntil end of turn\b", re.I)
+
+# Words that may be left over in a matched clause without meaning anything was
+# dropped: the card's own name, connectives, and bare articles. Everything else
+# in a residue is presumed to carry rules meaning — "instead", "for each",
+# "target player", "may" — and lands the clause in `unparsed`. That deliberately
+# includes "you may": executing an optional effect as mandatory is a greedy
+# always-yes pilot, which is a different card. Honest refusal beats it.
+_RESIDUE_OK = frozenset({
+    "cardname", "cardname's", "s", "you", "then", "and", "a", "an", "the",
+    "it", "to",
+})
+
+
+def _residue(clause: str, spans: list[tuple[int, int]]) -> str | None:
+    """The text of `clause` no pattern accounted for, or None if it is noise."""
+    kept: list[str] = []
+    last = 0
+    for start, end in sorted(spans):
+        kept.append(clause[last:max(last, start)])
+        last = max(last, end)
+    kept.append(clause[last:])
+    text = _DURATION.sub("", " ".join(kept))
+    words = [w for w in re.split(r"[^a-z']+", text.lower()) if w]
+    if all(w in _RESIDUE_OK for w in words):
+        return None
+    return " ".join(" ".join(kept).split()).strip(" .,;")
+
+
 def _parse_clauses(body: str) -> tuple[tuple[Effect, ...], tuple[str, ...]]:
     effects: list[Effect] = []
     unparsed: list[str] = []
@@ -391,13 +453,23 @@ def _parse_clauses(body: str) -> tuple[tuple[Effect, ...], tuple[str, ...]]:
         clause = clause.strip(" .;")
         if not clause:
             continue
-        matched = [e for pattern in PATTERNS if (e := pattern.match(clause))]
-        if matched:
-            # One clause can carry several verbs ("draw a card, then discard a
-            # card"), so all matches are kept rather than only the first.
-            effects.extend(matched)
-        else:
+        # One clause can carry several verbs ("draw a card, then discard a
+        # card"), so every match of every pattern is kept — and the spans say
+        # which parts of the clause were actually consumed.
+        hits = [hit for pattern in PATTERNS for hit in pattern.matches(clause)]
+        if not hits:
             unparsed.append(clause)
+            continue
+        effects.extend(effect for effect, _ in hits)
+        leftover = _residue(clause, [span for _, span in hits])
+        if leftover is not None:
+            # A matched clause with meaningful text outside every match is a
+            # clause the parser half-read. "You gain 4 life. If a creature died
+            # this turn, you gain 8 life instead" matched gain_life twice and
+            # dropped the "instead" — a replacement effect — so the card gained
+            # 12. The residue is recorded, the card is refused, and no coverage
+            # number can hide it.
+            unparsed.append(leftover)
 
     return tuple(effects), tuple(unparsed)
 

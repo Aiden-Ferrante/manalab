@@ -66,6 +66,25 @@ rules engine actually plays. The notebook
 
 ### Fixed
 
+- **The parser stopped half-reading cards** (`cards/effects.py`). Two
+  mechanisms broke ADR 0005's contract that every clause is matched or recorded
+  unparsed. `_keyword_ability` swallowed 297 lines whole into an inert `param`
+  ("Scry X, …, then draw three cards" was recorded as scry, coverage 1.0);
+  a parameter is now bounded — a number, a mana cost, or plain words, never a
+  comma or period. And `Pattern.match` used `search`, so only a clause's first
+  match was seen and the unmatched remainder of a matched clause went nowhere;
+  patterns now report every occurrence with its span, and meaningful residue
+  lands in `unparsed`. That residue is what catches the class no coverage
+  metric can see: "instead", "for each", "target player", "you may".
+
+  **The pool shrank from 540 to 357 and that is the fix working**: 183 cards
+  were faithful-on-paper while being executed half-read — Life Goes On gained
+  12 life instead of 4, Congregate paid the caster, Ancestral Recall drew for
+  the wrong player. All refused now. Forge disagreements on faithful cards:
+  53/0/18/3 across the four classes → **0/0/0/0** over 30,931 scripts. The
+  road back up is `docs/parser-plan.md`, ranked and measured.
+
+
 - **Asymmetric pump was executed with the wrong arithmetic** (`engine/resolve.py`).
   Pump was modelled as counters, which are symmetric by construction, so the two
   halves were collapsed with `max(power, toughness)` and applied to both. Nameless

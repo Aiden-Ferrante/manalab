@@ -92,7 +92,15 @@ def main() -> int:
         # (1) a verb Forge encodes, mapped into our vocabulary, that we never produced
         for fverb, n in theirs.items():
             ours_verb = FORGE_TO_OURS.get(fverb)
-            if ours_verb and ours.get(ours_verb, 0) < n:
+            if ours_verb is None:
+                continue
+            have = ours.get(ours_verb, 0)
+            if fverb == "Pump":
+                # Forge writes "gains lifelink until end of turn" as Pump with a
+                # KW$ parameter; we write it as grant_ability. Same card, two
+                # spellings — counting only our pump flagged correct cards.
+                have += ours.get("grant_ability", 0)
+            if have < n:
                 verb_gaps[fverb] += 1
                 if faithful:
                     dropped.append((card.name, f"{fverb} x{n} vs our {ours.get(ours_verb, 0)}"))
