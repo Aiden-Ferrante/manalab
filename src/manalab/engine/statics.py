@@ -32,6 +32,27 @@ from manalab.engine.objects import COMBAT_KEYWORDS, GameObject
 from manalab.engine.state import GameState
 from manalab.engine.zones import Zone
 
+UNTAP_DURING_OTHERS = (
+    "untap all permanents you control during each other player's untap step")
+"""Seedborn Muse's line, recognised verbatim. Not a P/T layer effect — it hooks
+the untap step itself, which `game._turn_based_action` asks about."""
+
+
+def untaps_during_others(card: Card) -> bool:
+    return any(
+        a.kind == "static"
+        and a.text.strip().rstrip(".").lower() == UNTAP_DURING_OTHERS
+        for a in card.abilities)
+
+
+def special_texts(card: Card) -> frozenset[str]:
+    """Static lines honoured outside the P/T recompute, for fidelity's skip."""
+    return frozenset(
+        a.text.strip().lower() for a in card.abilities
+        if a.kind == "static"
+        and a.text.strip().rstrip(".").lower() == UNTAP_DURING_OTHERS)
+
+
 _SELF = frozenset({"this creature", "this permanent", "cardname", "it"})
 _YOUR_CREATURES = frozenset({"creatures you control", "other creatures you control"})
 

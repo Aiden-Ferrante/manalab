@@ -202,7 +202,8 @@ class CurveAgent:
         return (len(action.attackers), -(blockers * 100 + life))
 
     HELPFUL = frozenset({"draw", "gain_life", "put_counters", "create_token",
-                         "pump", "grant_ability", "untap", "put_from_hand"})
+                         "pump", "grant_ability", "untap", "put_from_hand",
+                         "devotion_mana"})
     HARMFUL = frozenset({"deal_damage", "destroy", "tap"})
 
     def _activation_value(self, state: GameState, player: int,

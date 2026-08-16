@@ -35,7 +35,7 @@ IMPLEMENTED = frozenset(
      "put_counters", "shuffle", "search_library", "reveal",
      "create_token", "grant_ability", "add_mana", "ability_word",
      "tap", "untap", "sacrifice", "put_from_hand",
-     "return_from_graveyard", "define_x"}
+     "return_from_graveyard", "define_x", "devotion_mana"}
 )
 
 COUNTER_KINDS = frozenset({"+1/+1", "-1/-1"})
@@ -204,7 +204,12 @@ def unsupported(card: Card) -> tuple[str, ...]:
             reasons.append(f"{effect.verb} over a whole board is not modelled")
         if effect.verb == "return_from_graveyard":
             what = str(effect.get("target", "")).strip().lower()
-            if not re.fullmatch(r"(?:a|target) [\w' ]*card", what):
+            # At most two qualifying words, and no "and": "target card" and
+            # "a creature card" pass; "target creature card and all other
+            # cards with the same name" is a batch this cannot honour — the
+            # Forge oracle caught the wider pattern admitting it, the day it
+            # was written. The instrument is there to catch the instrument.
+            if not re.fullmatch(r"(?:a|target)(?: [\w']+){0,2} card", what):
                 reasons.append(f"graveyard return not understood: {what!r}")
         if effect.verb == "sacrifice":
             what = str(effect.get("what", "")).strip().lower()
@@ -562,6 +567,26 @@ def _apply_one(
         # The shuffle happens whether or not anything was found — failing to find
         # is a legal outcome and still shuffles.
         state.shuffle(controller)
+
+    elif verb == "devotion_mana":
+        # Devotion to a colour: that colour's pips among the mana costs of
+        # permanents you control (CR 700.5). The colour is chosen greedily —
+        # the most devoted one, WUBRG order breaking ties — the same declared
+        # rule every engine-made choice uses.
+        best_color, best = "", 0
+        for color in "WUBRG":
+            devotion = sum(
+                1
+                for obj in state.battlefield(controller)
+                for pip in obj.card.cost.symbols
+                if color in pip)
+            if devotion > best:
+                best_color, best = color, devotion
+        if best <= 0:
+            return              # no devotion, no mana: a legal outcome
+        pool = state.players[controller].mana_pool
+        pool[best_color] = pool.get(best_color, 0) + best
+        log.append(f"{name}: adds {best} {best_color} (devotion)")
 
     elif verb == "ability_word":
         # CR 207.2c: an ability word has no rules meaning. Landfall, threshold,

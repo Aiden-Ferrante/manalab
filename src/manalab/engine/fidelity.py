@@ -25,6 +25,7 @@ import manalab.engine.statics as statics
 import manalab.engine.targets as targets_mod
 import manalab.engine.triggers as triggers
 from manalab.cards.effects import normalise as _normalise
+from manalab.cards.handcoded import NAMES as _HANDCODED_NAMES
 from manalab.cards.model import Card
 from manalab.engine.mana import MULTI_MANA
 
@@ -95,6 +96,12 @@ def assess(card: Card) -> Fidelity:
         # down the lands branch. Both were silently admitting transforming and
         # modal cards to the faithful pool as textless 0-drops.
         return Fidelity(card.name, ("multi-faced; the engine plays only one side",))
+
+    if card.name in _HANDCODED_NAMES:
+        # Implemented by name, verified by a test against the real store — the
+        # registry's contract. The standard text checks would re-refuse a card
+        # whose whole point is that no pattern will ever fit it.
+        return Fidelity(card.name, ())
 
     if card.is_land:
         # Lands are modelled as mana sources and nothing else.
@@ -177,7 +184,7 @@ def _handled_lines(card: Card) -> frozenset[str]:
     fires and quietly does the wrong thing, which is the failure this whole layer
     exists to prevent.
     """
-    handled: set[str] = set()
+    handled: set[str] = set(statics.special_texts(card))
     payable = {index for index, _, _ in activation.activatable(card)}
     for index, ability in enumerate(card.abilities):
         # An activated ability whose cost we can pay and whose every verb we can

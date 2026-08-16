@@ -151,6 +151,13 @@ class Game:
 
         if step is Step.UNTAP:
             state.untap_all(active)
+            # Seedborn's line: permanents that untap during OTHER players'
+            # untap steps. Asked of the battlefield each untap step rather
+            # than cached, so the effect leaves when its source does.
+            for obj in state.battlefield():
+                if obj.controller != active and \
+                        statics.untaps_during_others(obj.card):
+                    state.untap_all(obj.controller)
         elif step is Step.DRAW:
             # The player on the play skips their first draw.
             if state.turn > 1:

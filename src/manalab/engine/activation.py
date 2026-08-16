@@ -102,6 +102,8 @@ def activatable(card: Card) -> tuple[tuple[int, Ability, ActivationCost], ...]:
     for index, ability in enumerate(card.abilities):
         if ability.kind != "activated" or is_mana_ability(ability):
             continue
+        if ability.unparsed or not ability.effects:
+            continue    # paying real mana for a silent no-op is not an option
         cost = parse_activation_cost(ability.cost)
         if cost is not None:
             out.append((index, ability, cost))

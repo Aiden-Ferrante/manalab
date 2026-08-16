@@ -603,6 +603,13 @@ def with_effects(card: Card) -> Card:
     """
     from dataclasses import replace
 
+    from manalab.cards.handcoded import HANDCODED
+
+    if card.name in HANDCODED:
+        abilities = HANDCODED[card.name]
+        return replace(card, abilities=abilities,
+                       effects=tuple(e for a in abilities for e in a.effects),
+                       unparsed=())
     parsed = parse_card(card)
     return replace(card, effects=parsed.effects, abilities=parsed.abilities,
                    unparsed=tuple(parsed.unparsed))
