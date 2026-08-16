@@ -26,10 +26,20 @@ HEADERS = {"User-Agent": "manalab/0.1 (research; deckbuilding simulation)",
            "Accept": "application/json"}
 
 
-def _get(url: str) -> dict:
-    req = urllib.request.Request(url, headers=HEADERS)
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        return json.load(resp)
+def _get(url: str, attempts: int = 3) -> dict:
+    """Fetch with retry: mtgjson sits behind Cloudflare and a transient 521
+    killed the first campaign that drew an uncached deck."""
+    import time
+    last: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            req = urllib.request.Request(url, headers=HEADERS)
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                return json.load(resp)
+        except Exception as exc:      # noqa: BLE001 - retried, then re-raised
+            last = exc
+            time.sleep(2 ** attempt)
+    raise last
 
 
 def fetch_index(data_dir: Path | str = "data") -> list[dict]:
