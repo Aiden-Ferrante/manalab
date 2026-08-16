@@ -34,7 +34,7 @@ IMPLEMENTED = frozenset(
     {"deal_damage", "destroy", "draw", "gain_life", "pump", "counter_spell",
      "put_counters", "shuffle", "search_library", "reveal",
      "create_token", "grant_ability", "add_mana", "ability_word",
-     "tap", "untap"}
+     "tap", "untap", "sacrifice"}
 )
 
 COUNTER_KINDS = frozenset({"+1/+1", "-1/-1"})
@@ -146,6 +146,16 @@ def _mana_added(effect: Effect) -> dict[str, int] | None:
     return out
 
 
+_SAC_SELF = frozenset({"it", "this creature", "this land", "this artifact",
+                       "this permanent", "cardname"})
+_SAC_KINDS = {"a creature": "Creature", "a land": "Land",
+              "an artifact": "Artifact", "a permanent": ""}
+"""Sacrifice descriptors this engine honours. The choice of which permanent to
+give up belongs to the controller; this engine's declared rule is the weakest
+matching one (lowest power+toughness, oldest first) — deterministic, so common
+random numbers survive, and the same crude-pilot philosophy the agents use.
+Anything else — "a creature with flying", "two lands" — is refused by name."""
+
 MASS_VERBS = frozenset({"deal_damage", "destroy"})
 """Verbs that may apply to a whole board.
 
@@ -208,6 +218,10 @@ def unsupported(card: Card) -> tuple[str, ...]:
             reasons.append(f"reveal not understood: {effect.get('what')!r}")
         if effect.verb == "search_library" and _fetch_plan(effect) is None:
             reasons.append(f"library search not understood: {effect.get('what')!r}")
+        if effect.verb == "sacrifice":
+            what = str(effect.get("what", "")).strip().lower()
+            if what not in _SAC_SELF and what not in _SAC_KINDS:
+                reasons.append(f"sacrifice not understood: {effect.get('what')!r}")
         if effect.verb == "put_counters":
             kind = str(effect.get("kind", ""))
             if kind not in COUNTER_KINDS:
@@ -384,6 +398,25 @@ def _apply_one(
         who = target.player if (target and target.is_player) else controller
         state.draw(who, amount)
         log.append(f"{name}: P{who} draws {amount}")
+
+    elif verb == "sacrifice":
+        what = str(effect.get("what", "")).strip().lower()
+        if what in _SAC_SELF:
+            victim = state.objects.get(spell.source_id) if spell.source_id else None
+            if victim is None or victim.zone is not Zone.BATTLEFIELD:
+                return          # already gone; nothing to give up
+        else:
+            kind = _SAC_KINDS.get(what)
+            if kind is None:  # pragma: no cover - unsupported() refuses first
+                return
+            mine = [o for o in state.battlefield(controller)
+                    if not kind or kind in o.card.type_line]
+            if not mine:
+                return          # a legal outcome: nothing to sacrifice
+            victim = min(mine, key=lambda o: (o.power + o.toughness
+                                              if o.is_creature else 0, o.id))
+        state.move(victim, Zone.GRAVEYARD)
+        log.append(f"{name}: P{controller} sacrifices {victim.card.name}")
 
     elif verb in ("tap", "untap"):
         if target is None or target.is_player:

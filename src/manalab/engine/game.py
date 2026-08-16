@@ -108,6 +108,8 @@ class Game:
         state.turn += 1
         state.active_player = (state.turn - 1) % len(state.players)
         state.players[state.active_player].begin_turn()
+        for obj in state.battlefield():
+            obj.loyalty_used = False
         state.log.append(f"--- turn {state.turn} ({state.players[state.active_player].name})")
 
         for step in TURN:
@@ -245,6 +247,7 @@ class Game:
                                          zone=Zone.STACK,
                                          controller=event.controller)
                     entry.trigger = ability
+                    entry.source_id = source.id
                     state.log.append(
                         f"trigger: {source.card.name} ({event.kind.value})")
 
@@ -270,12 +273,23 @@ class Game:
             mana.pay(state, player, cost.mana)
             if cost.taps:
                 obj.tapped = True
+            if cost.loyalty is not None:
+                # One loyalty ability per walker per turn (CR 606.3); the
+                # enumerator already filtered, this is the payment itself.
+                obj.add_counters("loyalty", cost.loyalty)
+                obj.loyalty_used = True
             # An activated ability goes on the stack as its own object, exactly
             # as a trigger does — it is not the permanent, and the permanent
             # stays put when it resolves.
             entry = state.create(obj.card, owner=obj.owner, zone=Zone.STACK,
                                  controller=player)
             entry.trigger = ability
+            entry.source_id = obj.id
+            if cost.sacrifices_self:
+                # Paid after the ability is on the stack, so the ability
+                # resolves even though its source is dead — costs are paid on
+                # activation, and dies triggers fire like any other death.
+                state.move(obj, Zone.GRAVEYARD)
             if action.targets:
                 self._targets[entry.id] = action.targets
             state.log.append(f"activates {obj.card.name} #{action.index}")

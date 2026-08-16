@@ -231,6 +231,7 @@ PATTERNS: tuple[Pattern, ...] = (
 
 _ACTIVATED = re.compile(r"^([^:]{1,60}):\s*(.+)$", re.S)
 _LOYALTY = re.compile(r"^([+\-\u2212](?:\d+|X)|0)\s*:\s*(.+)$", re.I | re.S)
+_SAC_COST = re.compile(r"^sacrifice (?:this \w+|cardname|it)$", re.I)
 _TRIGGERED = re.compile(r"^(when(?:ever)?|at)\b([^,]*),\s*(.+)$", re.I | re.S)
 _CLAUSE_SPLIT = re.compile(r"(?<=[.;])\s+")
 
@@ -432,7 +433,8 @@ def _parse_line(line: str, known_keywords: set[str]) -> Ability:
                        matched_clauses=matched)
 
     activated_match = _ACTIVATED.match(line)
-    if activated_match and "{" in activated_match.group(1):
+    if activated_match and ("{" in activated_match.group(1)
+                            or _SAC_COST.match(activated_match.group(1).strip())):
         cost, body = activated_match.groups()
         effects, unparsed, matched = _parse_clauses(body)
         return Ability("activated", line, effects, unparsed, cost=cost.strip(),

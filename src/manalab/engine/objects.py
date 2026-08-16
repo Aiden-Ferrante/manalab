@@ -92,6 +92,16 @@ class GameObject:
     from the battlefield, so an anthem leaving stops applying without anything
     having to remember that it did."""
 
+    source_id: int | None = None
+    """For a stack entry made by a trigger or activation: the battlefield object
+    it came from. "Sacrifice it" has to know which permanent *it* is — the stack
+    entry is a different object (CR 113.7a), so without this link a
+    self-sacrifice has nothing to point at."""
+    loyalty_used: bool = False
+    """A loyalty ability has been activated this turn (CR 606.3 allows one per
+    planeswalker per turn). Cleared at the start of every turn — the limit is
+    per turn, not per its controller's turn."""
+
     is_commander: bool = False
     """Set for the object its owner named as their commander. Survives zone
     changes via `fresh_copy`, unlike everything else on this object — a

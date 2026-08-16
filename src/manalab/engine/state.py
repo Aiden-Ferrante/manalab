@@ -91,6 +91,8 @@ class GameState:
             # what `move` does — and `create_token` goes through here.
             obj.summoning_sick = True
             obj.tapped = obj.card.enters_tapped
+            if "Planeswalker" in obj.card.type_line and obj.card.loyalty.isdigit():
+                obj.counters["loyalty"] = int(obj.card.loyalty)
         if zone == Zone.BATTLEFIELD and not quiet:
             self.events.append(Event(EventKind.ENTERS, obj.id, obj.controller))
         return obj
@@ -163,6 +165,10 @@ class GameState:
         if to == Zone.BATTLEFIELD:
             new.summoning_sick = True
             new.tapped = new.card.enters_tapped
+            if "Planeswalker" in new.card.type_line and new.card.loyalty.isdigit():
+                # Printed loyalty arrives as counters (CR 306.5b). Without this
+                # a planeswalker died to the loyalty SBA the moment it resolved.
+                new.counters["loyalty"] = int(new.card.loyalty)
 
         self.objects[new.id] = new
         destination = self._zone_list(to, new)

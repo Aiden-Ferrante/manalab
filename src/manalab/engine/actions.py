@@ -125,6 +125,13 @@ def legal(state: GameState, player: int, step: Step, *, stack_empty: bool) -> li
         for index, ability, cost in activation.activatable(obj.card):
             if cost.taps and not obj.can_tap:
                 continue
+            if cost.loyalty is not None:
+                # Sorcery speed, once per walker per turn, and you cannot
+                # remove counters the walker does not have (CR 606.5).
+                if not sorcery_speed or obj.loyalty_used:
+                    continue
+                if cost.loyalty < 0 and obj.counters.get("loyalty", 0) < -cost.loyalty:
+                    continue
             if not can_pay(state, player, cost.mana):
                 continue
             actions.extend(_activations(state, player, obj, index, ability))

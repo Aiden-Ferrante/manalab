@@ -29,10 +29,21 @@ _TAP = re.compile(r"^\{t\}$", re.I)
 _MANA = re.compile(r"^(?:\{[^}]+\})+$")
 
 
+_SELF_SAC = re.compile(r"^sacrifice (?:this \w+|cardname|it)$", re.I)
+_LOYALTY_COST = re.compile(r"^([+\-]?\d+) loyalty$", re.I)
+
+
 @dataclass(frozen=True)
 class ActivationCost:
     mana: ManaCost
     taps: bool = False
+    sacrifices_self: bool = False
+    """Paying this cost puts the source into its owner's graveyard — which fires
+    dies triggers, exactly as any other death does. Sakura-Tribe Elder's whole
+    identity is this cost."""
+    loyalty: int | None = None
+    """Signed loyalty delta, for a planeswalker ability. Payable only if the
+    walker has enough counters to remove, and only once per walker per turn."""
 
 
 def parse_activation_cost(text: str) -> ActivationCost | None:
@@ -46,8 +57,13 @@ def parse_activation_cost(text: str) -> ActivationCost | None:
     if not raw:
         return None
 
+    loyal = _LOYALTY_COST.match(raw)
+    if loyal:
+        return ActivationCost(parse_cost(None), loyalty=int(loyal.group(1)))
+
     mana_parts: list[str] = []
     taps = False
+    sacrifices_self = False
     for part in (p.strip() for p in raw.split(",")):
         if not part:
             continue
@@ -57,15 +73,17 @@ def parse_activation_cost(text: str) -> ActivationCost | None:
             taps = True
         elif _MANA.match(part):
             mana_parts.append(part)
+        elif _SELF_SAC.match(part):
+            sacrifices_self = True
         else:
-            return None          # sacrifice, discard, exile, pay N life
-    if not mana_parts and not taps:
+            return None          # sacrifice-a-creature, discard, pay N life
+    if not mana_parts and not taps and not sacrifices_self:
         return None
 
     cost = parse_cost("".join(mana_parts)) if mana_parts else parse_cost(None)
     if cost.approximated:
         return None              # a lossy cost is one we would undercharge
-    return ActivationCost(cost, taps)
+    return ActivationCost(cost, taps, sacrifices_self)
 
 
 def is_mana_ability(ability: Ability) -> bool:
