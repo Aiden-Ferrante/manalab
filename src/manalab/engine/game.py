@@ -19,6 +19,7 @@ from typing import Sequence
 
 import manalab.engine.actions as A
 import manalab.engine.combat as combat
+import manalab.engine.commander as commander
 import manalab.engine.mana as mana
 import manalab.engine.resolve as resolve
 import manalab.engine.activation as activation
@@ -282,7 +283,11 @@ class Game:
             state.players[player].lands_played += 1
         elif isinstance(action, A.CastSpell):
             obj = state.objects[action.object_id]
-            mana.pay(state, player, obj.card.cost)
+            cost = obj.card.cost
+            if obj.zone == Zone.COMMAND:
+                cost = commander.cost_from_command_zone(state, obj)
+                commander.note_cast(state, player)
+            mana.pay(state, player, cost)
             moved = state.move(obj, Zone.STACK, controller=player)
             # A card changing zones becomes a new object (CR 400.7), so the
             # targets have to be filed under the id it has *on the stack*.

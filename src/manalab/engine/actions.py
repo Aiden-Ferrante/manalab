@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Sequence
 
 import manalab.engine.activation as activation
+import manalab.engine.commander as commander
 import manalab.engine.combat as combat
 import manalab.engine.resolve as resolve
 import manalab.engine.targets as targets
@@ -135,6 +136,20 @@ def legal(state: GameState, player: int, step: Step, *, stack_empty: bool) -> li
             if not can_pay(state, player, cost.mana):
                 continue
             actions.extend(_activations(state, player, obj, index, ability))
+
+    # A commander casts from the command zone (CR 903.6) at its taxed cost.
+    # The tax machinery existed before anything could call it — the command
+    # zone, the {2}-per-cast bookkeeping and the 903.9 replacement all worked,
+    # and the commander itself was never offered as a cast.
+    for obj in state.zone(Zone.COMMAND):
+        if obj.owner != player or not obj.is_commander:
+            continue
+        instant_speed = "Instant" in obj.types or obj.has("Flash")
+        if not (instant_speed or sorcery_speed):
+            continue
+        if not can_pay(state, player, commander.cost_from_command_zone(state, obj)):
+            continue
+        actions.extend(_castings(state, player, obj))
 
     for obj in hand:
         if obj.is_land:
