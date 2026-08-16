@@ -150,6 +150,12 @@ class Card:
     keywords: frozenset[str] = frozenset()
     colors: frozenset[str] = frozenset()
     color_identity: frozenset[str] = frozenset()
+    edhrec_rank: int | None = None
+    """Scryfall's EDHREC popularity rank — lower is more played. Crowd-distilled
+    card quality for exactly this format, and the measured answer to why the
+    first pipeline's decks sat below fair share: a synergy score knows which
+    cards connect, not which are any good. None for cards EDHREC has no data
+    on, which is itself a signal."""
     faces: tuple[Face, ...] = ()
     """Every printed side, in printed order. Always at least one once loaded from
     the store — a single-faced card gets a synthesised face 0 — so nothing reading
@@ -289,6 +295,8 @@ def card_from_scryfall(row: Mapping[str, object]) -> Card:
         enters_tapped=enters_tapped,
         oracle_text=text,
         effects=(),  # populated by the effect-verb layer; empty is honest for now
+        edhrec_rank=(int(row["edhrec_rank"])
+                     if row.get("edhrec_rank") is not None else None),
         power=str(row.get("power") or ""),
         toughness=str(row.get("toughness") or ""),
         loyalty=str(row.get("loyalty") or ""),

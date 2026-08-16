@@ -23,7 +23,7 @@ DEFAULT_DB = Path("data/cards.duckdb")
 _COLUMNS = """
     oracle_id, name, mana_cost, cmc, type_line, oracle_text, layout,
     colors, color_identity, produced_mana, legalities, rarity, set_name,
-    power, toughness, loyalty, keywords
+    power, toughness, loyalty, keywords, edhrec_rank
 """
 
 # Paper formats only. The Arena-only ones — historic, timeless, gladiator,

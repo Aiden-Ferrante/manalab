@@ -89,7 +89,7 @@ DEFAULTS = {
     # the corpus, so it is the honest default.
     "legalities": {"standard": "not_legal", "modern": "legal"}, "rarity": "common",
     "set_name": "Testing", "power": None, "toughness": None, "loyalty": None,
-    "keywords": [], "card_faces": None,
+    "keywords": [], "card_faces": None, "edhrec_rank": None,
 }
 
 

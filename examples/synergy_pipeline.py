@@ -64,8 +64,17 @@ def main() -> int:
                 and set(card.color_identity) <= {"G"}
                 and not card.is_land and card.name != COMMANDER):
             pool.setdefault(min(int(card.cmc), 7) or 1, []).append(card.name)
+    # The quality prior: keep only the ~200 most-played cards per bucket by
+    # EDHREC rank. The first run of this pipeline measured what its absence
+    # costs — synergy edges over unplayable filler averaged 0.16 across five
+    # tables. Unranked cards sort last, which is what unranked means.
+    for cmc in pool:
+        pool[cmc] = sorted(
+            pool[cmc],
+            key=lambda n: cards_by_rank.get(n) or 10**9)[:200]
     cards = {c.name: c for c in store.all_cards()}
     cards_by_name = cards
+    cards_by_rank = {c.name: c.edhrec_rank for c in cards.values()}
 
     def bucket_of(name: str) -> int:
         return min(int(cards[name].cmc), 7) or 1
