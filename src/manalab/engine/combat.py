@@ -25,6 +25,7 @@ from __future__ import annotations
 from typing import Iterable, Sequence
 
 import manalab.engine.commander as commander
+import manalab.engine.triggers as triggers
 from manalab.engine.objects import GameObject
 from manalab.engine.state import GameState
 from manalab.engine.zones import Zone
@@ -226,6 +227,9 @@ def combat_damage(
             deal_to_player(attacker.attacking, attacker.power, attacker)
             commander.deal_commander_damage(
                 state, attacker.attacking, attacker, attacker.power)
+            state.events.append(triggers.Event(
+                triggers.EventKind.COMBAT_DAMAGE_TO_PLAYER,
+                attacker.id, attacker.controller))
             log.append(
                 f"{attacker.card.name} hits P{attacker.attacking} for {attacker.power}"
             )
@@ -249,6 +253,9 @@ def combat_damage(
                 deal_to_player(attacker.attacking, remaining, attacker)
                 commander.deal_commander_damage(
                     state, attacker.attacking, attacker, remaining)
+                state.events.append(triggers.Event(
+                    triggers.EventKind.COMBAT_DAMAGE_TO_PLAYER,
+                    attacker.id, attacker.controller))
                 log.append(f"{attacker.card.name} tramples over for {remaining}")
             elif blockers:
                 # Excess must still be assigned to something it is blocked by.

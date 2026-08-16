@@ -67,11 +67,10 @@ def test_the_self_dies_family_is_recognised(condition):
 
 
 @pytest.mark.parametrize("condition", [
-    "the beginning of your upkeep",
-    "this creature attacks",
     "a land you control enters",          # someone else's event, not its own
-    "this creature deals combat damage to a player",
-    "you cast a noncreature spell",
+    "another creature you control dies",  # needs a subject distinct from the source
+    "you cast a noncreature spell",       # happens on the stack, not the battlefield
+    "the beginning of each opponent's upkeep",
     "",
 ])
 def test_everything_else_is_refused_rather_than_guessed(condition):
@@ -81,12 +80,13 @@ def test_everything_else_is_refused_rather_than_guessed(condition):
 
 
 def test_an_unrecognised_trigger_makes_its_card_unfaithful():
-    upkeep = Ability(kind="triggered", text="At the beginning of your upkeep, draw a card.",
-                     effects=(Effect("draw", (("amount", 1),)),),
-                     trigger="the beginning of your upkeep")
-    card = Card("u", "Upkeeper", parse_cost("{1}{G}"), "Creature — Elf",
-                power="1", toughness="1", abilities=(upkeep,),
-                oracle_text="At the beginning of your upkeep, draw a card.")
+    text = "Whenever a land you control enters, draw a card."
+    landfall = Ability(kind="triggered", text=text,
+                       effects=(Effect("draw", (("amount", 1),)),),
+                       trigger="a land you control enters")
+    card = Card("u", "Landfaller", parse_cost("{1}{G}"), "Creature — Elf",
+                power="1", toughness="1", abilities=(landfall,),
+                oracle_text=text)
     report = fidelity.assess(card)
     assert not report.faithful
     assert any("trigger not understood" in r for r in report.reasons)
@@ -216,3 +216,90 @@ def test_a_token_entering_fires_enters_triggers():
 
     assert any(e.kind is EventKind.ENTERS for e in state.events), \
         "a token entering the battlefield is an event like any other"
+
+
+# --- step and combat triggers -------------------------------------------
+
+
+@pytest.mark.parametrize("condition,kind", [
+    ("this creature attacks", EventKind.ATTACKS),
+    ("CARDNAME attacks", EventKind.ATTACKS),
+    ("this creature deals combat damage to a player",
+     EventKind.COMBAT_DAMAGE_TO_PLAYER),
+    ("the beginning of your upkeep", EventKind.UPKEEP),
+    ("the beginning of your end step", EventKind.END_STEP),
+    ("the beginning of combat on your turn", EventKind.BEGIN_COMBAT),
+])
+def test_the_step_and_combat_families_are_recognised(condition, kind):
+    assert triggers.parse_trigger(condition) is kind
+
+
+def upkeeper() -> Card:
+    text = "At the beginning of your upkeep, draw a card."
+    ability = Ability(kind="triggered", text=text,
+                      effects=(Effect("draw", (("amount", 1),)),),
+                      trigger="the beginning of your upkeep")
+    return Card("up", "Upkeeper", parse_cost("{1}{G}"), "Creature — Elf",
+                power="1", toughness="1", oracle_text=text, abilities=(ability,))
+
+
+def test_an_upkeep_trigger_belongs_to_its_controller():
+    """"Your upkeep" is the whole reason a step event carries a player: it fires
+    on its controller's turn, not on everyone's."""
+    from manalab.engine.steps import Step
+
+    state, game = game_with()
+    state.create(upkeeper(), owner=1, zone=Zone.BATTLEFIELD, quiet=True)
+
+    state.active_player = 0
+    game._turn_based_action(Step.UPKEEP)
+    game._collect_triggers()
+    assert state.zone(Zone.STACK) == [], "P1's upkeep trigger fired on P0's turn"
+
+    state.active_player = 1
+    game._turn_based_action(Step.UPKEEP)
+    game._collect_triggers()
+    assert len(state.zone(Zone.STACK)) == 1
+
+
+def test_a_step_trigger_fires_for_every_matching_permanent():
+    from manalab.engine.steps import Step
+
+    state, game = game_with()
+    state.create(upkeeper(), owner=0, zone=Zone.BATTLEFIELD, quiet=True)
+    state.create(upkeeper(), owner=0, zone=Zone.BATTLEFIELD, quiet=True)
+
+    state.active_player = 0
+    game._turn_based_action(Step.UPKEEP)
+    game._collect_triggers()
+
+    assert len(state.zone(Zone.STACK)) == 2
+
+
+def test_attacking_fires_an_attack_trigger():
+    attacker_card = Card(
+        "at", "Raider", parse_cost("{1}{R}"), "Creature — Human",
+        power="2", toughness="2",
+        oracle_text="Whenever this creature attacks, draw a card.",
+        abilities=(Ability(kind="triggered",
+                           text="Whenever this creature attacks, draw a card.",
+                           effects=(Effect("draw", (("amount", 1),)),),
+                           trigger="this creature attacks"),))
+    state, game = game_with()
+    obj = state.create(attacker_card, owner=0, zone=Zone.BATTLEFIELD, quiet=True)
+    obj.summoning_sick = False
+    state.active_player = 0
+
+    game._apply_attack_for_test = None
+    from manalab.engine import actions as A
+    game.agents[0] = type("Fixed", (), {
+        "name": "fixed",
+        "act": lambda self, s, p, options: next(
+            o for o in options if isinstance(o, A.DeclareAttackers) and o.attackers),
+    })()
+    game._declare_attackers()
+
+    game._collect_triggers()
+    assert len(state.zone(Zone.STACK)) == 1
+    game._resolve_top()
+    assert len(state.hand(0)) == 1

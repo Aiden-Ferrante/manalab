@@ -17,10 +17,13 @@ Everything else is refused rather than guessed at, which is the same contract
 never reaches a search pool, so nothing optimises against a trigger the engine
 would have silently dropped.
 
-Not yet recognised, in rough order of what would pay next: upkeep and end-step
-triggers (1,185), attack triggers (855), combat-damage-to-a-player (420), and
-the "another permanent you control" family, which needs an event to carry a
-subject distinct from the ability's source.
+Recognised: the self-referential families (enters, dies, attacks, deals combat
+damage to a player) and the step families that belong to their controller
+(upkeep, end step, beginning of combat). Together roughly 5,800 abilities.
+
+Not yet: the "another permanent you control" family, which needs an event to
+carry a subject distinct from the ability's source, and the cast triggers, which
+need an event on the stack rather than on the battlefield.
 """
 
 from __future__ import annotations
@@ -35,6 +38,20 @@ from manalab.cards.model import Ability, Card
 class EventKind(Enum):
     ENTERS = "enters"
     DIES = "dies"
+    ATTACKS = "attacks"
+    COMBAT_DAMAGE_TO_PLAYER = "combat damage to a player"
+    UPKEEP = "upkeep"
+    END_STEP = "end step"
+    BEGIN_COMBAT = "beginning of combat"
+
+
+STEP_EVENTS = frozenset({EventKind.UPKEEP, EventKind.END_STEP,
+                         EventKind.BEGIN_COMBAT})
+"""Events that happen to a *player*, not to a permanent.
+
+"At the beginning of your upkeep" is watched by everything its controller has on
+the battlefield, so these are matched by scanning rather than by looking up the
+one object something happened to."""
 
 
 @dataclass(frozen=True)
@@ -42,9 +59,11 @@ class Event:
     """Something that happened, which abilities may be watching for."""
 
     kind: EventKind
-    object_id: int
-    """The permanent it happened to."""
+    object_id: int | None
+    """The permanent it happened to, or None for a step event."""
     controller: int
+    """Whose event it is: the permanent's controller, or the active player for a
+    step event — which is what makes "your upkeep" mean *yours*."""
 
 
 # "this creature enters", "this enchantment enters", "cardname enters",
@@ -54,6 +73,19 @@ _SELF_ENTERS = re.compile(
     r"^(?:this|cardname)(?:\s+\w+)?\s+enters(?:\s+the\s+battlefield)?$", re.I)
 _SELF_DIES = re.compile(
     r"^(?:this|cardname)(?:\s+\w+)?\s+dies$", re.I)
+_SELF_ATTACKS = re.compile(
+    r"^(?:this|cardname)(?:\s+\w+)?\s+attacks$", re.I)
+_SELF_COMBAT_DAMAGE = re.compile(
+    r"^(?:this|cardname)(?:\s+\w+)?\s+deals combat damage to a player$", re.I)
+
+# Step triggers. "your" is load-bearing and is why the event carries a player:
+# an upkeep trigger belongs to its controller, not to whoever is watching.
+_STEPS = (
+    (re.compile(r"^the beginning of your upkeep$", re.I), EventKind.UPKEEP),
+    (re.compile(r"^the beginning of your end step$", re.I), EventKind.END_STEP),
+    (re.compile(r"^the beginning of combat on your turn$", re.I),
+     EventKind.BEGIN_COMBAT),
+)
 
 
 def parse_trigger(text: str) -> EventKind | None:
@@ -70,6 +102,13 @@ def parse_trigger(text: str) -> EventKind | None:
         return EventKind.ENTERS
     if _SELF_DIES.match(condition):
         return EventKind.DIES
+    if _SELF_ATTACKS.match(condition):
+        return EventKind.ATTACKS
+    if _SELF_COMBAT_DAMAGE.match(condition):
+        return EventKind.COMBAT_DAMAGE_TO_PLAYER
+    for pattern, kind in _STEPS:
+        if pattern.match(condition):
+            return kind
     return None
 
 

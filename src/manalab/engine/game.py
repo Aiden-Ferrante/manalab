@@ -130,9 +130,21 @@ class Game:
 
     # --- turn-based actions ---------------------------------------------
 
+    _STEP_EVENTS = {
+        Step.UPKEEP: triggers.EventKind.UPKEEP,
+        Step.END: triggers.EventKind.END_STEP,
+        Step.BEGIN_COMBAT: triggers.EventKind.BEGIN_COMBAT,
+    }
+
     def _turn_based_action(self, step: Step) -> None:
         state = self.state
         active = state.active_player
+
+        # "At the beginning of your upkeep" belongs to the active player, so
+        # the event carries them and matching scans their battlefield.
+        kind = self._STEP_EVENTS.get(step)
+        if kind is not None:
+            state.events.append(triggers.Event(kind, None, active))
 
         if step is Step.UNTAP:
             state.untap_all(active)
@@ -218,15 +230,23 @@ class Game:
         pending, state.events = state.events, []
 
         for event in pending:
-            source = state.objects.get(event.object_id)
-            if source is None:
-                continue        # it moved again before triggers were collected
-            for ability in triggers.fired_by(source.card, event.kind):
-                entry = state.create(source.card, owner=source.owner,
-                                     zone=Zone.STACK, controller=event.controller)
-                entry.trigger = ability
-                state.log.append(
-                    f"trigger: {source.card.name} ({event.kind.value})")
+            if event.kind in triggers.STEP_EVENTS:
+                # Happened to a player, so everything they control is watching.
+                sources = [o for o in state.battlefield(event.controller)]
+            else:
+                one = state.objects.get(event.object_id)
+                if one is None:
+                    continue    # it moved again before triggers were collected
+                sources = [one]
+
+            for source in sources:
+                for ability in triggers.fired_by(source.card, event.kind):
+                    entry = state.create(source.card, owner=source.owner,
+                                         zone=Zone.STACK,
+                                         controller=event.controller)
+                    entry.trigger = ability
+                    state.log.append(
+                        f"trigger: {source.card.name} ({event.kind.value})")
 
     def _apply(self, player: int, action: A.Action) -> None:
         state = self.state
@@ -306,6 +326,8 @@ class Game:
         for obj_id in choice.attackers:
             attacker = state.objects[obj_id]
             attacker.attacking = defender
+            state.events.append(
+                triggers.Event(triggers.EventKind.ATTACKS, attacker.id, active))
             if not attacker.has("Vigilance"):
                 attacker.tapped = True
         if choice.attackers:
