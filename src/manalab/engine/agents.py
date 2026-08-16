@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Protocol, Sequence, runtime_checkable
 
 from manalab.engine.actions import (
+    ActivateAbility,
     Action,
     CastSpell,
     DeclareAttackers,
@@ -106,6 +107,15 @@ class CurveAgent:
         if spells:
             return max(spells, key=lambda a: self._spell_value(state, player, a))
 
+        # Activations come after casting deliberately: mana spent on an ability
+        # is mana not spent developing the board, and this agent's whole theory
+        # is curve. Only helpful ones, scored the same way spells are.
+        activations = [o for o in options if isinstance(o, ActivateAbility)]
+        helpful = [(self._activation_value(state, player, a), a) for a in activations]
+        helpful = [(v, a) for v, a in helpful if v > 0]
+        if helpful:
+            return max(helpful, key=lambda pair: pair[0])[1]
+
         attacks = [o for o in options if isinstance(o, DeclareAttackers)]
         if attacks:
             return max(attacks, key=lambda a: len(a.attackers)) if self.attack_with_everything \
@@ -165,6 +175,37 @@ class CurveAgent:
                 quality += (body if mine else -100.0)
 
         return (card.cmc, quality)
+
+    HELPFUL = frozenset({"draw", "gain_life", "put_counters", "create_token",
+                         "pump", "grant_ability"})
+    HARMFUL = frozenset({"deal_damage", "destroy"})
+
+    def _activation_value(self, state: GameState, player: int,
+                          action: ActivateAbility) -> float:
+        """Whether this activation is worth making. Deliberately shallow.
+
+        An ability that helps is worth using; one that would hurt is worth using
+        only at somebody else. Nothing here holds mana open, reasons about the
+        opponent's board, or waits for a better moment — the pilot is a control
+        for the simulation, not a player.
+        """
+        obj = state.objects.get(action.object_id)
+        if obj is None:
+            return 0.0
+
+        score = 0.0
+        for effect in obj.card.abilities[action.index].effects:
+            if effect.verb in self.HELPFUL:
+                score += 1.0
+            elif effect.verb in self.HARMFUL:
+                # Pointed at anything of ours this is a cost, not a play.
+                for target in action.targets:
+                    if target.is_player:
+                        score += 2.0 if target.player != player else -100.0
+                    else:
+                        victim = state.objects.get(target.object_id)
+                        score += 2.0 if victim and victim.controller != player else -100.0
+        return score
 
     def _best_block(
         self, state: GameState, player: int, blocks: Sequence[DeclareBlockers]

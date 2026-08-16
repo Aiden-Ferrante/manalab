@@ -85,6 +85,12 @@ class GameState:
         )
         self.objects[obj.id] = obj
         self._zone_list(zone, obj).append(obj.id)
+        if zone == Zone.BATTLEFIELD:
+            # Same as arriving via `move`. Without it a token could attack
+            # and pay {T} the turn it was made, which is neither the rule nor
+            # what `move` does — and `create_token` goes through here.
+            obj.summoning_sick = True
+            obj.tapped = obj.card.enters_tapped
         if zone == Zone.BATTLEFIELD and not quiet:
             self.events.append(Event(EventKind.ENTERS, obj.id, obj.controller))
         return obj

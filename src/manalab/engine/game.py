@@ -21,6 +21,7 @@ import manalab.engine.actions as A
 import manalab.engine.combat as combat
 import manalab.engine.mana as mana
 import manalab.engine.resolve as resolve
+import manalab.engine.activation as activation
 import manalab.engine.sba as sba
 import manalab.engine.statics as statics
 import manalab.engine.triggers as triggers
@@ -242,6 +243,22 @@ class Game:
             # Keying them by the hand id leaves every spell resolving untargeted.
             if action.targets:
                 self._targets[moved.id] = action.targets
+        elif isinstance(action, A.ActivateAbility):
+            obj = state.objects[action.object_id]
+            ability = obj.card.abilities[action.index]
+            cost = activation.parse_activation_cost(ability.cost)
+            mana.pay(state, player, cost.mana)
+            if cost.taps:
+                obj.tapped = True
+            # An activated ability goes on the stack as its own object, exactly
+            # as a trigger does — it is not the permanent, and the permanent
+            # stays put when it resolves.
+            entry = state.create(obj.card, owner=obj.owner, zone=Zone.STACK,
+                                 controller=player)
+            entry.trigger = ability
+            if action.targets:
+                self._targets[entry.id] = action.targets
+            state.log.append(f"activates {obj.card.name} #{action.index}")
         else:  # pragma: no cover - the priority loop offers nothing else
             raise NotImplementedError(action)
 
@@ -254,7 +271,8 @@ class Game:
             # A triggered ability is its own object: it resolves, does its
             # thing, and ceases to exist. The permanent that made it stays
             # exactly where it is.
-            resolve.apply_effects(state, top, top.trigger.effects, (), state.log)
+            chosen = self._targets.pop(top.id, ())
+            resolve.apply_effects(state, top, top.trigger.effects, chosen, state.log)
             state.cease(top)
             return
 

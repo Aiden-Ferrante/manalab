@@ -20,6 +20,7 @@ import re
 from dataclasses import dataclass
 
 import manalab.engine.resolve as resolve
+import manalab.engine.activation as activation
 import manalab.engine.statics as statics
 import manalab.engine.triggers as triggers
 from manalab.cards.model import Card
@@ -134,6 +135,7 @@ def assess(card: Card) -> Fidelity:
     # a half-understood trigger out of a search pool.
     reasons.extend(triggers.unsupported(card))
     reasons.extend(statics.unsupported(card))
+    reasons.extend(activation.unsupported(card))
 
     if _residual_text(card, skip=_handled_lines(card)):
         reasons.append("rules text the engine does not execute")
@@ -152,6 +154,14 @@ def _handled_lines(card: Card) -> frozenset[str]:
     exists to prevent.
     """
     handled: set[str] = set()
+    payable = {index for index, _, _ in activation.activatable(card)}
+    for index, ability in enumerate(card.abilities):
+        # An activated ability whose cost we can pay and whose every verb we can
+        # resolve is executed, not ignored — the same bar the other branches use.
+        if index in payable and ability.effects and not ability.unparsed \
+                and all(e.verb in resolve.IMPLEMENTED for e in ability.effects) \
+                and ability.text:
+            handled.add(ability.text.strip().lower())
     for ability in card.abilities:
         # A static ability whose whole effect `statics` applies is executed, not
         # ignored — the same bar the triggered branch below uses.

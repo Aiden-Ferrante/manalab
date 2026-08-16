@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
+import manalab.engine.activation as activation
 import manalab.engine.combat as combat
 import manalab.engine.resolve as resolve
 import manalab.engine.targets as targets
@@ -57,6 +58,25 @@ class CastSpell(Action):
 
 
 @dataclass(frozen=True)
+class ActivateAbility(Action):
+    """Activate an ability of a permanent you control.
+
+    `index` is into `card.abilities`, so the ability is identified by where it is
+    printed rather than by its text — two abilities on one card can read the same
+    and still be different abilities.
+    """
+
+    object_id: int = 0
+    index: int = 0
+    targets: tuple["T.Target", ...] = ()
+
+    def describe(self, state: GameState) -> str:
+        obj = state.objects.get(self.object_id)
+        name = obj.card.name if obj else f"<gone {self.object_id}>"
+        return f"activate {name} #{self.index}"
+
+
+@dataclass(frozen=True)
 class DeclareAttackers(Action):
     attackers: tuple[int, ...] = ()
     defender: int | None = None
@@ -97,6 +117,17 @@ def legal(state: GameState, player: int, step: Step, *, stack_empty: bool) -> li
 
     if sorcery_speed and state.players[player].can_play_land():
         actions.extend(PlayLand(obj.id) for obj in hand if obj.is_land)
+
+    # Activated abilities of permanents you control. Instant speed, like any
+    # activated ability without a timing restriction — the restriction itself is
+    # not modelled, so a sorcery-speed-only ability is currently over-permitted.
+    for obj in state.battlefield(player):
+        for index, ability, cost in activation.activatable(obj.card):
+            if cost.taps and not obj.can_tap:
+                continue
+            if not can_pay(state, player, cost.mana):
+                continue
+            actions.extend(_activations(state, player, obj, index, ability))
 
     for obj in hand:
         if obj.is_land:
@@ -168,6 +199,25 @@ and holds the rest back as a block, which still spans "swing with everything"
 through "swing with nothing" but stops a fifteen-creature board from generating
 thirty-two thousand options nobody will read.
 """
+
+
+def _activations(state: GameState, player: int, obj, index: int,
+                 ability) -> list[ActivateAbility]:
+    """One action per legal set of targets, mirroring how casting enumerates."""
+    specs = [targets.parse(e.get("target")) for e in ability.effects]
+    if any(spec is None for spec in specs):
+        return []                       # refused upstream; belt and braces
+    needed = [spec for spec in specs if spec.needs_target]
+    if not needed:
+        return [ActivateAbility(obj.id, index)]
+
+    choices: list[tuple] = [()]
+    for spec in needed:
+        legal_for = targets.legal_targets(state, player, spec)
+        if not legal_for:
+            return []
+        choices = [chosen + (one,) for chosen in choices for one in legal_for]
+    return [ActivateAbility(obj.id, index, tuple(c)) for c in choices]
 
 
 def legal_attacks(state: GameState, player: int) -> list[DeclareAttackers]:
