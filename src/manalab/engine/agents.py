@@ -118,8 +118,9 @@ class CurveAgent:
 
         attacks = [o for o in options if isinstance(o, DeclareAttackers)]
         if attacks:
-            return max(attacks, key=lambda a: len(a.attackers)) if self.attack_with_everything \
-                else min(attacks, key=lambda a: len(a.attackers))
+            if not self.attack_with_everything:
+                return min(attacks, key=lambda a: len(a.attackers))
+            return max(attacks, key=lambda a: self._attack_value(state, a))
 
         blocks = [o for o in options if isinstance(o, DeclareBlockers)]
         if blocks:
@@ -181,6 +182,24 @@ class CurveAgent:
                 quality += (body if mine else -100.0)
 
         return (card.cmc, quality)
+
+    @staticmethod
+    def _attack_value(state: GameState, action: DeclareAttackers) -> tuple:
+        """Most attackers first, then the softest defender.
+
+        The multiplayer choice this pilot was missing: with three opponents,
+        "attack with everything" still had to pick a face, and picking
+        arbitrarily let four mirror decks chump-block each other into the turn
+        cap — the first real table measured mean game length at exactly the
+        cap, all draws. Softest = fewest untapped creatures, then least life.
+        Still no politics: it never reasons about who is *winning*, only about
+        where damage lands.
+        """
+        if not action.attackers or action.defender is None:
+            return (len(action.attackers), 0.0)
+        blockers = sum(1 for o in state.creatures(action.defender) if not o.tapped)
+        life = state.players[action.defender].life
+        return (len(action.attackers), -(blockers * 100 + life))
 
     HELPFUL = frozenset({"draw", "gain_life", "put_counters", "create_token",
                          "pump", "grant_ability", "untap", "put_from_hand"})

@@ -26,7 +26,11 @@ from manalab.engine.zones import Zone
 from manalab.evaluate.result import EvalResult
 
 STARTING_LIFE = 40
-MAX_TURNS = 24
+MAX_TURNS = 48
+"""Measured, not guessed. On a four-seat mirror of crude-piloted stompy:
+cap 24 finished 0/8 games (every one a draw at the cap — the number that
+exposed the stall), 36 finished 3/8, 48 finished 8/8 with the mirror win rate
+at exactly the fair 0.25 and mean length 37.1 turns."""
 
 
 @dataclass(frozen=True)
@@ -52,6 +56,35 @@ def resolve_deck(deck: Decklist, commander_name: str,
     if commander is None:
         raise ValueError(f"{commander_name!r} is not in the deck")
     return CommanderDeck(name or deck.name, commander, tuple(library))
+
+
+class CommanderDecklistEvaluator:
+    """The same table, speaking the `Evaluator` protocol search knows.
+
+    `CommanderEvaluator` wants a built `CommanderDeck`; the search layer hands
+    around `Decklist`s and never touches `Card`s. This adapter resolves at the
+    seam, which is what lets `search.Oracle`, the GA and every anti-winner's-
+    curse fixture run over Commander unchanged.
+    """
+
+    def __init__(self, commander_name: str, cards, gauntlet) -> None:
+        self.commander = cards[commander_name]
+        self.cards = cards
+        self.inner = CommanderEvaluator(gauntlet)
+        self.evaluator = self.inner.evaluator
+
+    def evaluate(self, deck: Decklist, *, n_games: int, seed: int) -> EvalResult:
+        # The commander is fixed, not searched: the searcher owns the library
+        # and this adapter supplies the general — a search that could drop its
+        # own commander would just be a 99-card constructed deck with a tax.
+        library: list = []
+        for name, count in deck.counts.items():
+            if name == self.commander.name:
+                continue
+            library.extend([self.cards[name]] * count)
+        built = CommanderDeck(deck.name or "candidate", self.commander,
+                              tuple(library))
+        return self.inner.evaluate(built, n_games=n_games, seed=seed)
 
 
 class CommanderEvaluator:

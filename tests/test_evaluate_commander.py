@@ -88,3 +88,18 @@ def test_game_i_equals_seed_s_plus_i():
     for i in range(4):
         one = ev.evaluate(_deck("candidate"), n_games=1, seed=100 + i)
         assert one.samples["win_rate"][0] == whole.samples["win_rate"][i]
+
+
+def test_the_decklist_adapter_speaks_the_search_protocol():
+    """A Decklist in, an EvalResult out — the seam the GA and Oracle need."""
+    from manalab.cards.model import Decklist
+    from manalab.evaluate.commander import CommanderDecklistEvaluator
+
+    cards = {c.name: c for c in (FOREST, GENERAL, BEAR)}
+    ev = CommanderDecklistEvaluator(
+        GENERAL.name, cards, [_deck("g1"), _deck("g2"), _deck("g3")])
+    # The searcher owns the library; the adapter supplies the general — a
+    # search that could drop its own commander would just be constructed.
+    deck = Decklist({"Forest": 24, "Grizzly Bears": 15}, "list")
+    result = ev.evaluate(deck, n_games=2, seed=3)
+    assert len(result.samples["win_rate"]) == 2
