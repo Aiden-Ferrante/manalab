@@ -32,3 +32,25 @@ def test_three_opponents_exactly():
 @pytest.mark.skipif(not forge_sim.available(), reason="Forge not installed")
 def test_forge_is_installed_here():
     assert forge_sim.available()
+
+
+def test_cache_key_is_stable_and_sensitive():
+    from manalab.evaluate.forge_sim import _cache_key
+
+    counts = {"Forest": 38, "Grizzly Bears": 4}
+    opp = [("a", "X", {"Plains": 40})]
+    k1 = _cache_key(counts, "Yeva", opp, 7, 12, 420)
+    assert k1 == _cache_key(dict(counts), "Yeva", list(opp), 7, 12, 420)
+    assert k1 != _cache_key(counts, "Yeva", opp, 8, 12, 420), "seed must matter"
+    assert k1 != _cache_key({**counts, "Forest": 39}, "Yeva", opp, 7, 12, 420)
+
+
+def test_cache_round_trips(tmp_path, monkeypatch):
+    import manalab.evaluate.forge_sim as fs
+
+    monkeypatch.setattr(fs, "_CACHE_DB", tmp_path / "cache.sqlite")
+    with fs._cache() as con:
+        con.execute("INSERT INTO results VALUES (?, ?)", ("k", "[1.0, 0.0]"))
+    with fs._cache() as con:
+        row = con.execute("SELECT samples FROM results WHERE key='k'").fetchone()
+    assert row[0] == "[1.0, 0.0]"

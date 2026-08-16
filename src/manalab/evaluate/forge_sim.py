@@ -23,11 +23,14 @@ failing mid-campaign.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
+import sqlite3
 import subprocess
-import tempfile
+import threading
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Callable, Mapping, Sequence
 
 from manalab.evaluate.result import EvalResult
 
@@ -37,6 +40,35 @@ FORGE_DECKS = Path.home() / ".forge/decks/commander"
 
 _GAME_RESULT = re.compile(r"Game Result: Game \d+ ended in \d+ ms\. (.+?) has won")
 _DRAW = re.compile(r"Game Result: .*draw", re.I)
+
+TOTAL_JVMS = 14
+_SLOTS = threading.BoundedSemaphore(TOTAL_JVMS)
+"""One global budget for concurrent Forge processes, whatever spawns them.
+
+Per-evaluation `workers` used to be the only cap, so an 8-game evaluation
+filled 8 slots and left the rest of a 20-core box idle while evaluations
+queued. Campaigns may now run several evaluations concurrently (a plain
+ThreadPoolExecutor over `evaluate` calls) and this semaphore keeps the
+machine at its budget instead of over- or under-subscribed."""
+
+_JSA = Path.home() / ".local/forge/forge-appcds.jsa"
+_CACHE_DB = Path("data/forge_cache.sqlite")
+_CACHE_LOCK = threading.Lock()
+
+
+def _cache() -> sqlite3.Connection:
+    _CACHE_DB.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(_CACHE_DB)
+    con.execute("""CREATE TABLE IF NOT EXISTS results (
+        key TEXT PRIMARY KEY, samples TEXT NOT NULL)""")
+    return con
+
+
+def _cache_key(candidate_counts, commander, opponents, seed, games, clock) -> str:
+    payload = json.dumps([sorted(candidate_counts.items()), commander,
+                          [(n, g, sorted(c.items())) for n, g, c in opponents],
+                          seed, games, clock])
+    return hashlib.sha256(payload.encode()).hexdigest()
 
 
 def available() -> bool:
@@ -83,9 +115,28 @@ class ForgeSimEvaluator:
         self.evaluator = "forge-sim"
 
     def evaluate(self, deck_name: str, commander: str, counts: Mapping[str, int],
-                 *, n_games: int, seed: int) -> EvalResult:
+                 *, n_games: int, seed: int,
+                 futility: "Callable[[int, int, int], bool] | None" = None) -> EvalResult:
+        """`futility(wins, played, remaining)` -> True stops buying games.
+
+        The evaluation then returns the games actually played — fewer than
+        asked, honestly reported in `n_games`. Sound only when the stopping
+        rule is fixed before the run (a pre-registered cut in a halving round);
+        peeking-and-stopping on a whim is the garden of forking paths.
+        """
         if not available():
             raise RuntimeError(f"Forge not found at {FORGE_JAR}")
+        key = _cache_key(dict(counts), commander, self.opponents, seed,
+                         n_games, self.clock_seconds)
+        with _CACHE_LOCK, _cache() as con:
+            row = con.execute("SELECT samples FROM results WHERE key=?",
+                              (key,)).fetchone()
+        if row:
+            wins = json.loads(row[0])
+            return EvalResult(deck_name=deck_name, evaluator=self.evaluator,
+                              n_games=len(wins), seed=seed,
+                              metrics={"win_rate": sum(wins) / max(len(wins), 1)},
+                              samples={"win_rate": tuple(wins)})
         FORGE_DECKS.mkdir(parents=True, exist_ok=True)
 
         candidate = f"cand_{deck_name}"[:40].replace(" ", "_")
@@ -97,13 +148,18 @@ class ForgeSimEvaluator:
             write_dck(safe, general, opp_counts, FORGE_DECKS)
 
         def run_chunk(chunk_seed: int, games: int) -> list[float]:
-            cmd = [str(JAVA), "-Xmx3g", "-jar", str(FORGE_JAR), "sim",
+            cmd = [str(JAVA), "-Xmx3g",
+                   # AppCDS: cache the class-loading half of JVM startup across
+                   # runs. First run writes the archive, later runs boot faster.
+                   f"-XX:SharedArchiveFile={_JSA}", "-XX:+AutoCreateSharedArchive",
+                   "-jar", str(FORGE_JAR), "sim",
                    "-d", *[f"{n}.dck" for n in names],
                    "-f", "Commander", "-n", str(games), "-S", str(chunk_seed),
                    "-c", str(self.clock_seconds), "-q"]
-            proc = subprocess.run(cmd, capture_output=True, text=True,
-                                  cwd=FORGE_JAR.parent,
-                                  timeout=games * self.clock_seconds + 300)
+            with _SLOTS:
+                proc = subprocess.run(cmd, capture_output=True, text=True,
+                                      cwd=FORGE_JAR.parent,
+                                      timeout=games * self.clock_seconds + 300)
             chunk_wins: list[float] = []
             for line in proc.stdout.splitlines():
                 found = _GAME_RESULT.search(line)
@@ -121,13 +177,32 @@ class ForgeSimEvaluator:
         base, extra = divmod(n_games, workers)
         chunks = [(seed + 1000 * i, base + (1 if i < extra else 0))
                   for i in range(workers) if base + (1 if i < extra else 0) > 0]
+        wins: list[float] = []
         if len(chunks) == 1:
             wins = run_chunk(*chunks[0])
-        else:
+        elif futility is None:
             from concurrent.futures import ThreadPoolExecutor
             with ThreadPoolExecutor(max_workers=len(chunks)) as pool_:
                 wins = [w for chunk in pool_.map(lambda c: run_chunk(*c), chunks)
                         for w in chunk]
+        else:
+            # Two waves: buy half, consult the stopping rule, buy the rest.
+            from concurrent.futures import ThreadPoolExecutor
+            half = max(1, len(chunks) // 2)
+            for wave in (chunks[:half], chunks[half:]):
+                if not wave:
+                    continue
+                with ThreadPoolExecutor(max_workers=len(wave)) as pool_:
+                    wins.extend(w for chunk in pool_.map(
+                        lambda c: run_chunk(*c), wave) for w in chunk)
+                remaining = n_games - len(wins)
+                if remaining and futility(int(sum(wins)), len(wins), remaining):
+                    break
+
+        with _CACHE_LOCK, _cache() as con:
+            con.execute("INSERT OR REPLACE INTO results VALUES (?, ?)",
+                        (key, json.dumps(wins)))
+        n_games = len(wins)
 
         return EvalResult(
             deck_name=deck_name, evaluator=self.evaluator,
