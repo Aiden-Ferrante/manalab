@@ -124,10 +124,12 @@ PATTERNS: tuple[Pattern, ...] = (
     # --- damage and life ------------------------------------------------
     _p("deal_damage", r"\bdeals? (\d+|X) damage to ([^.,]+)", "amount", "target",
        numeric=("amount",)),
-    _p("gain_life", r"\bgains? (\d+|X) life", "amount", numeric=("amount",)),
+    _p("gain_life", r"(?:\b(target player|target opponent) )?\bgains? (\d+|X) life",
+       "target", "amount", numeric=("amount",)),
     _p("lose_life", r"\bloses? (\d+|X) life", "amount", numeric=("amount",)),
     # --- cards ----------------------------------------------------------
-    _p("draw", r"\bdraws? (\w+) cards?", "amount", numeric=("amount",)),
+    _p("draw", r"(?:\b(target player|target opponent) )?\bdraws? (\w+) cards?",
+       "target", "amount", numeric=("amount",)),
     _p("discard", r"\bdiscards? (\w+) cards?", "amount", numeric=("amount",)),
     _p("mill", r"\bmills? (\w+) cards?", "amount", numeric=("amount",)),
     _p("search_library", r"\bsearch(?:es)? your library for ([^.]+)", "what"),
@@ -138,7 +140,8 @@ PATTERNS: tuple[Pattern, ...] = (
     _p("counter_spell", r"\bcounters? target ([^.,]*spell[^.,]*)", "target"),
     _p("destroy", r"\bdestroys? ([^.,]+)", "target"),
     _p("exile", r"\bexiles? ([^.,]+)", "target"),
-    _p("sacrifice", r"\bsacrifices? ([^.,]+)", "what"),
+    _p("sacrifice",
+       r"\bsacrifices? ((?:a|an|this|that) [\w' \-]{1,25}|it|cardname)", "what"),
     _p("return_to_hand", r"\breturns? ([^.]+?) to (?:its|their) owner'?s? hand", "target"),
     _p("return_from_graveyard", r"\breturns? ([^.]+?) from your graveyard", "target"),
     # --- board ----------------------------------------------------------
@@ -155,8 +158,8 @@ PATTERNS: tuple[Pattern, ...] = (
     _p("transform", r"(?:if ([^,]+), )?transforms? ([^.,]+)", "condition", "target"),
     _p("must_attack", r"\battacks? each combat if able"),
     _p("block_restriction", r"\bcan block only ([^.,]+)", "only"),
-    _p("tap", r"\btaps? ([^.,]+)", "target"),
-    _p("untap", r"\buntaps? ([^.,]+)", "target"),
+    _p("tap", r"\btaps? (target [^.,]{1,40})", "target"),
+    _p("untap", r"\buntaps? (target [^.,]{1,40})", "target"),
     # --- modifiers ------------------------------------------------------
     _p("cost_reduction", r"costs? (\{[^}]+\}|\d+) less", "amount"),
     _p("cost_increase", r"costs? (\{[^}]+\}|\d+) more", "amount"),
@@ -227,6 +230,7 @@ PATTERNS: tuple[Pattern, ...] = (
 # --- ability structure --------------------------------------------------
 
 _ACTIVATED = re.compile(r"^([^:]{1,60}):\s*(.+)$", re.S)
+_LOYALTY = re.compile(r"^([+\-\u2212](?:\d+|X)|0)\s*:\s*(.+)$", re.I | re.S)
 _TRIGGERED = re.compile(r"^(when(?:ever)?|at)\b([^,]*),\s*(.+)$", re.I | re.S)
 _CLAUSE_SPLIT = re.compile(r"(?<=[.;])\s+")
 
@@ -251,8 +255,13 @@ class Parsed:
 
     @property
     def coverage(self) -> float:
-        """Fraction of clauses that matched a verb. 1.0 for vanilla cards."""
-        matched = len(self.effects)
+        """Fraction of clauses that matched a verb. 1.0 for vanilla cards.
+
+        Clauses, not effects: one clause matching k patterns used to add k to
+        both numerator and denominator, so the more verbs a clause carried the
+        better the card looked — 5,223 phantom matches corpus-wide, 1,032 cards
+        overstated, worst +0.27."""
+        matched = sum(a.matched_clauses for a in self.abilities)
         total = matched + len(self.unparsed)
         return 1.0 if total == 0 else matched / total
 
@@ -393,7 +402,8 @@ def _parse_line(line: str, known_keywords: set[str]) -> Ability:
                                        (("name", worded.group(1).lower()),)),)
                        + inner.effects,
                        unparsed=inner.unparsed,
-                       trigger=inner.trigger, cost=inner.cost)
+                       trigger=inner.trigger, cost=inner.cost,
+                       matched_clauses=inner.matched_clauses)
 
     # A keyword ability names a rule; it is not text to be parsed into effects.
     keyword = _keyword_ability(line, known_keywords)
@@ -403,17 +413,33 @@ def _parse_line(line: str, known_keywords: set[str]) -> Ability:
     trigger_match = _TRIGGERED.match(line)
     if trigger_match:
         _, condition, body = trigger_match.groups()
-        effects, unparsed = _parse_clauses(body)
-        return Ability("triggered", line, effects, unparsed, trigger=condition.strip())
+        effects, unparsed, matched = _parse_clauses(body)
+        return Ability("triggered", line, effects, unparsed,
+                       trigger=condition.strip(), matched_clauses=matched)
+
+    # "+1: Draw a card." is an activated ability whose cost is loyalty. It used
+    # to fall through to plain clause parsing, which read the body fine and
+    # dropped the cost on the floor — 873 abilities where a +1 tick and a −7
+    # ultimate were indistinguishable to any consumer. The engine cannot pay a
+    # loyalty cost yet (once-per-turn is not modelled, and a search would spam
+    # +1 forever), so `activation` refuses it BY NAME — recorded, not lost.
+    loyalty_match = _LOYALTY.match(line)
+    if loyalty_match:
+        cost, body = loyalty_match.groups()
+        effects, unparsed, matched = _parse_clauses(body)
+        return Ability("activated", line, effects, unparsed,
+                       cost=cost.replace("\u2212", "-") + " loyalty",
+                       matched_clauses=matched)
 
     activated_match = _ACTIVATED.match(line)
     if activated_match and "{" in activated_match.group(1):
         cost, body = activated_match.groups()
-        effects, unparsed = _parse_clauses(body)
-        return Ability("activated", line, effects, unparsed, cost=cost.strip())
+        effects, unparsed, matched = _parse_clauses(body)
+        return Ability("activated", line, effects, unparsed, cost=cost.strip(),
+                       matched_clauses=matched)
 
-    effects, unparsed = _parse_clauses(line)
-    return Ability("spell", line, effects, unparsed)
+    effects, unparsed, matched = _parse_clauses(line)
+    return Ability("spell", line, effects, unparsed, matched_clauses=matched)
 
 
 _DURATION = re.compile(r"\buntil end of turn\b", re.I)
@@ -430,7 +456,24 @@ _RESIDUE_OK = frozenset({
 })
 
 
-def _residue(clause: str, spans: list[tuple[int, int]]) -> str | None:
+_SELF_UPSIDE = frozenset({
+    "draw", "gain_life", "scry", "surveil", "put_counters", "create_token",
+    "add_mana", "search_library", "shuffle", "reveal", "pump", "grant_ability",
+    "untap",
+})
+"""Verbs whose "you may" is pure upside for the one making the choice.
+
+Greedy-yes is a **declared approximation**: "you may draw a card" is executed
+as "draw a card", because any competent pilot always says yes to its own
+upside. Measured on the full corpus: **267 cards** are admitted by this rule
+(their only residue is "may", their every verb their own upside), while
+**3,180** cards with a "may" residue stay refused — a cost, another player's
+choice, an "unless" — because "each opponent may" leaves the words
+`each opponent` in the residue regardless."""
+
+
+def _residue(clause: str, spans: list[tuple[int, int]],
+             verbs: frozenset[str]) -> str | None:
     """The text of `clause` no pattern accounted for, or None if it is noise."""
     kept: list[str] = []
     last = 0
@@ -440,14 +483,18 @@ def _residue(clause: str, spans: list[tuple[int, int]]) -> str | None:
     kept.append(clause[last:])
     text = _DURATION.sub("", " ".join(kept))
     words = [w for w in re.split(r"[^a-z']+", text.lower()) if w]
-    if all(w in _RESIDUE_OK for w in words):
+    extra = {w for w in words if w not in _RESIDUE_OK}
+    if not extra:
         return None
+    if extra == {"may"} and verbs <= _SELF_UPSIDE:
+        return None          # greedy-yes: see _SELF_UPSIDE
     return " ".join(" ".join(kept).split()).strip(" .,;")
 
 
-def _parse_clauses(body: str) -> tuple[tuple[Effect, ...], tuple[str, ...]]:
+def _parse_clauses(body: str) -> tuple[tuple[Effect, ...], tuple[str, ...], int]:
     effects: list[Effect] = []
     unparsed: list[str] = []
+    matched_clauses = 0
 
     for clause in _CLAUSE_SPLIT.split(body):
         clause = clause.strip(" .;")
@@ -461,7 +508,9 @@ def _parse_clauses(body: str) -> tuple[tuple[Effect, ...], tuple[str, ...]]:
             unparsed.append(clause)
             continue
         effects.extend(effect for effect, _ in hits)
-        leftover = _residue(clause, [span for _, span in hits])
+        matched_clauses += 1
+        leftover = _residue(clause, [span for _, span in hits],
+                            frozenset(e.verb for e, _ in hits))
         if leftover is not None:
             # A matched clause with meaningful text outside every match is a
             # clause the parser half-read. "You gain 4 life. If a creature died
@@ -471,7 +520,7 @@ def _parse_clauses(body: str) -> tuple[tuple[Effect, ...], tuple[str, ...]]:
             # number can hide it.
             unparsed.append(leftover)
 
-    return tuple(effects), tuple(unparsed)
+    return tuple(effects), tuple(unparsed), matched_clauses
 
 
 def parse_card(card: Card) -> Parsed:
@@ -604,8 +653,9 @@ def measure(cards: Sequence[Card]) -> Coverage:
 
         for effect in parsed.effects:
             report.verb_counts[effect.verb] = report.verb_counts.get(effect.verb, 0) + 1
-        report.matched += len(parsed.effects)
-        report.clauses += len(parsed.effects) + len(parsed.unparsed)
+        matched_clauses = sum(a.matched_clauses for a in parsed.abilities)
+        report.matched += matched_clauses
+        report.clauses += matched_clauses + len(parsed.unparsed)
 
         for clause in parsed.unparsed:
             # Collapse numbers so "deals 3 damage" and "deals 5 damage" report

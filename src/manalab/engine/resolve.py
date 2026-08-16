@@ -33,7 +33,8 @@ from manalab.engine.zones import Zone
 IMPLEMENTED = frozenset(
     {"deal_damage", "destroy", "draw", "gain_life", "pump", "counter_spell",
      "put_counters", "shuffle", "search_library", "reveal",
-     "create_token", "grant_ability", "add_mana", "ability_word"}
+     "create_token", "grant_ability", "add_mana", "ability_word",
+     "tap", "untap"}
 )
 
 COUNTER_KINDS = frozenset({"+1/+1", "-1/-1"})
@@ -377,8 +378,19 @@ def _apply_one(
 
     elif verb == "draw":
         amount = int(effect.get("amount", 1))
-        state.draw(controller, amount)
-        log.append(f"{name}: P{controller} draws {amount}")
+        # "Target player draws three cards" draws for the target, not the
+        # caster — the drop that had Ancestral Recall drawing for the wrong
+        # player. No target means the caster, as before.
+        who = target.player if (target and target.is_player) else controller
+        state.draw(who, amount)
+        log.append(f"{name}: P{who} draws {amount}")
+
+    elif verb in ("tap", "untap"):
+        if target is None or target.is_player:
+            return
+        obj = state.objects[target.object_id]
+        obj.tapped = verb == "tap"
+        log.append(f"{name} {verb}s {obj.card.name}")
 
     elif verb == "gain_life":
         amount = int(effect.get("amount", 1))

@@ -52,6 +52,11 @@ class Ability:
     cost: str = ""
     trigger: str = ""
     """The condition, as printed: "this creature enters", "CARDNAME dies"."""
+    matched_clauses: int = 0
+    """Clauses that produced at least one effect. Kept apart from
+    `len(effects)` because one clause can match several patterns, and counting
+    effects put 5,223 phantom matches into the coverage numerator AND
+    denominator — the more verbs a clause carried, the better it looked."""
 
     @property
     def fully_parsed(self) -> bool:

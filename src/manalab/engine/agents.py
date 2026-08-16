@@ -142,8 +142,8 @@ class CurveAgent:
         """
         card = state.objects[action.object_id].card
         verbs = {effect.verb for effect in card.effects}
-        harmful = bool(verbs & {"deal_damage", "destroy"})
-        helpful = "pump" in verbs
+        harmful = bool(verbs & {"deal_damage", "destroy", "tap"})
+        helpful = bool(verbs & {"pump", "untap"})
 
         if "counter_spell" in verbs:
             # Countering is worth doing when it is the opponent's spell and the
@@ -161,8 +161,14 @@ class CurveAgent:
         quality = 0.0
         for target in action.targets:
             if target.is_player:
-                # Burning the opponent is fine; burning yourself never is.
-                quality += 3.0 if target.player != player else -100.0
+                # A harmful spell goes at the opponent; a beneficial one —
+                # "target player draws three cards" — at its caster. Assuming
+                # every player target was a burn spell would have this pilot
+                # casting Ancestral Recall at the enemy.
+                helps = bool(verbs & {"draw", "gain_life"})
+                right_way = (target.player == player) if helps \
+                    else (target.player != player)
+                quality += 3.0 if right_way else -100.0
                 continue
             obj = state.objects.get(target.object_id)
             if obj is None:
@@ -177,8 +183,8 @@ class CurveAgent:
         return (card.cmc, quality)
 
     HELPFUL = frozenset({"draw", "gain_life", "put_counters", "create_token",
-                         "pump", "grant_ability"})
-    HARMFUL = frozenset({"deal_damage", "destroy"})
+                         "pump", "grant_ability", "untap"})
+    HARMFUL = frozenset({"deal_damage", "destroy", "tap"})
 
     def _activation_value(self, state: GameState, player: int,
                           action: ActivateAbility) -> float:

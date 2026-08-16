@@ -38,6 +38,13 @@ The pool *shrank* and that is the point: 183 of the old 540 were being
 half-executed. Every card the engine now plays, it plays whole — verified
 against 30,931 independently hand-encoded scripts.
 
+## Progress (2026-08-15, same day)
+
+Items 1–5 landed in one pass; the Forge oracle held at 0/0/0/0 throughout.
+Pool: 357 → 390, all of it honest recovery. The measured "you may" split:
+267 cards admitted (upside-only), 3,180 still refused. Item 6 remains the
+only open item, held closed by the residue tracker as designed.
+
 ## The plan, in order
 
 Each item is sized by measurement, not estimate. The instrument stays ahead of

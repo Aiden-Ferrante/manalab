@@ -245,3 +245,76 @@ def test_measure_collapses_numbers_so_gaps_group() -> None:
     report = measure(cards)
     assert len(report.misses) == 1
     assert list(report.misses.values()) == [3]
+
+
+# --- the parser plan, items 1-5 ------------------------------------------
+
+
+def test_target_player_draws_carries_its_target():
+    """"Target player draws three cards" — the Ancestral Recall class. The
+    target used to be residue; now it is a parameter `resolve` re-checks."""
+    parsed = parse_text("Target player draws three cards.", "Recall")
+    (ability,) = parsed.abilities
+    (effect,) = ability.effects
+    assert effect.verb == "draw"
+    assert str(effect.get("target")).lower() == "target player"
+    assert effect.get("amount") == 3
+    assert parsed.fully_parsed
+
+
+def test_target_player_gains_life_carries_its_target():
+    parsed = parse_text("Target player gains 4 life.", "Balm")
+    (effect,) = parsed.abilities[0].effects
+    assert str(effect.get("target")).lower() == "target player"
+
+
+def test_you_may_draw_is_greedy_yes():
+    """A declared approximation: optional self-upside is executed as mandatory,
+    because a competent pilot always says yes to its own upside."""
+    parsed = parse_text("You may draw a card.", "Chart")
+    assert parsed.fully_parsed
+    assert parsed.verbs == {"draw"}
+
+
+def test_another_players_may_is_not_ours_to_take():
+    parsed = parse_text("Each opponent may draw a card.", "Trap")
+    assert not parsed.fully_parsed
+
+
+def test_a_loyalty_cost_is_recorded_not_dropped():
+    """+1:/−X: lines are activated abilities whose cost is loyalty. 873 of them
+    used to parse their body fine and drop the cost on the floor."""
+    parsed = parse_text("+1: Draw a card.", "Jace")
+    (ability,) = parsed.abilities
+    assert ability.kind == "activated"
+    assert ability.cost == "+1 loyalty"
+    assert ability.effects[0].verb == "draw"
+
+    minus = parse_text("−7: You gain 10 life.", "Jace")
+    assert minus.abilities[0].cost == "-7 loyalty"
+
+
+def test_untap_static_prose_is_not_an_untap_effect():
+    """Static Orb's "players can't untap more than two permanents during their
+    untap steps" used to become untap(target='more than two permanents…')."""
+    parsed = parse_text(
+        "Players can't untap more than two permanents during their untap steps.",
+        "Static Orb")
+    assert "untap" not in parsed.verbs
+
+
+def test_untap_target_creature_is_an_untap_effect():
+    parsed = parse_text("Untap target creature.", "Twiddle")
+    (effect,) = parsed.abilities[0].effects
+    assert effect.verb == "untap"
+    assert effect.get("target") == "target creature"
+
+
+def test_coverage_counts_clauses_once():
+    """"Draw a card, then discard a card" is ONE clause matching two patterns.
+    Counting effects put 5,223 phantom matches in both the numerator and the
+    denominator, so multi-verb clauses looked better than they were."""
+    parsed = parse_text("Draw a card, then discard a card.", "Loot")
+    assert len(parsed.effects) == 2
+    assert parsed.abilities[0].matched_clauses == 1
+    assert parsed.coverage == 1.0
