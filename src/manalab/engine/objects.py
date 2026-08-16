@@ -27,6 +27,18 @@ and because `resolve` needs the same set to decide what it may grant — and
 `fidelity` imports `resolve`, so the constant cannot live downstream of it
 without a cycle or a second copy that drifts.
 """
+
+TIMING_KEYWORDS = frozenset({"flash"})
+"""Keywords implemented outside combat. Flash is read by `actions.legal`, which
+offers a creature at instant speed when it has one.
+
+Kept apart from COMBAT_KEYWORDS rather than folded in, because a test asserts
+every entry in that set is read by `combat` or `objects` — and flash is read by
+neither. Folding it in would either break that test or force it to stop
+checking, and it is the test that keeps the set honest."""
+
+IMPLEMENTED_KEYWORDS = COMBAT_KEYWORDS | TIMING_KEYWORDS
+"""Everything the engine actually does something with. What `fidelity` asks."""
 from manalab.engine.zones import Zone
 
 

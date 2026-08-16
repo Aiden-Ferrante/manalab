@@ -26,7 +26,8 @@ import manalab.engine.triggers as triggers
 from manalab.cards.model import Card
 from manalab.engine.mana import MULTI_MANA
 
-from manalab.engine.objects import COMBAT_KEYWORDS  # noqa: F401 - re-exported
+from manalab.engine.objects import (  # noqa: F401 - re-exported
+    COMBAT_KEYWORDS, IMPLEMENTED_KEYWORDS)
 """Re-exported: callers have imported it from here since before it moved."""
 
 _REMINDER = re.compile(r"\([^)]*\)")
@@ -67,7 +68,7 @@ def _residual_text(card: Card, skip: frozenset[str] = frozenset()) -> str:
             continue  # a basic "{T}: Add {G}." is exactly what mana.py does
         # A keyword line is a comma/semicolon-separated list of known keywords.
         parts = [p.strip().lower() for p in re.split(r"[;,]", line) if p.strip()]
-        if parts and all(p in COMBAT_KEYWORDS for p in parts):
+        if parts and all(p in IMPLEMENTED_KEYWORDS for p in parts):
             continue
         if line.strip().lower() in skip:
             continue        # a triggered ability the engine executes in full
@@ -131,7 +132,7 @@ def assess(card: Card) -> Fidelity:
     if card.is_creature and card.base_power is None:
         reasons.append("characteristic-defining power/toughness (a '*')")
 
-    unknown = {k.lower() for k in card.keywords} - COMBAT_KEYWORDS
+    unknown = {k.lower() for k in card.keywords} - IMPLEMENTED_KEYWORDS
     if unknown:
         reasons.append("unimplemented keywords: " + ", ".join(sorted(unknown)))
 

@@ -199,3 +199,21 @@ def test_a_card_whose_cost_we_cannot_pay_is_refused():
     report = fidelity.assess(card)
     assert not report.faithful
     assert any("activation cost not understood" in r for r in report.reasons)
+
+
+def test_flash_counts_as_implemented_because_it_is() -> None:
+    """`actions.legal` offers a creature with flash at instant speed, so refusing
+    the card for an "unimplemented keyword" was a stale refusal.
+
+    It is kept out of COMBAT_KEYWORDS on purpose: a test asserts every entry
+    there is read by `combat` or `objects`, and flash is read by neither.
+    """
+    from manalab.engine.objects import COMBAT_KEYWORDS, IMPLEMENTED_KEYWORDS
+
+    assert "flash" in IMPLEMENTED_KEYWORDS
+    assert "flash" not in COMBAT_KEYWORDS
+
+    card = Card("f", "Flashy", parse_cost("{1}{G}"), "Creature — Elf",
+                power="2", toughness="2", oracle_text="Flash",
+                keywords=frozenset({"Flash"}))
+    assert fidelity.assess(card).faithful, fidelity.assess(card).reasons
