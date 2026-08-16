@@ -25,8 +25,8 @@ from manalab.search.problem import Problem
 from manalab.search.report import Measurement, table
 
 SEEDS = (1, 2, 3)
-GA_BUDGET = 400          # games per seed, sized by step 0's cost measurement
-HELD_OUT_GAMES = 24
+GA_BUDGET = 700          # games per seed, sized by step 0's cost measurement
+HELD_OUT_GAMES = 64
 
 
 def build_decks(store, pool):
@@ -83,7 +83,7 @@ def main() -> int:
         problem = Problem(pool=search_pool, evaluator=evaluator,
                           objective=WIN_RATE, name=f"cmd-{seed}")
         oracle = Oracle(problem, budget=GA_BUDGET, seed=seed)
-        GeneticSearch(population=8, games_per_eval=4, elite=2).run(oracle)
+        GeneticSearch(population=8, games_per_eval=4, games_cap=64, elite=2).run(oracle)
         best = oracle.trace.best
         champions.append((seed, best))
         print(f"seed {seed}: in-sample best {best.score:.2f} "

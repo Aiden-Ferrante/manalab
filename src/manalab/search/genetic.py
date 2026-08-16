@@ -132,6 +132,11 @@ class GeneticSearch:
 
     population: int = 48
     games_per_eval: int = 40
+    """The FIRST rung of successive halving, not the whole evaluation. Every
+    genome gets this many games; survivors of each cut get double, until the
+    ladder tops out at `games_cap` or the survivors are down to the elites."""
+    games_cap: int = 320
+    """Deepest evaluation any genome receives in one generation."""
     elite: int = 4
     tournament: int = 3
     mutation_rate: float = 0.05
@@ -238,14 +243,48 @@ class GeneticSearch:
         deck that got lucky once is protected by that luck for the rest of the
         run, and the population converges on a measurement error.
         """
-        estimates = oracle.evaluate_many(
-            genomes,
-            self.games_per_eval,
-            stream=generation,
-            tag=f"gen{generation}",
-            workers=self.workers,
-        )
-        return [(tuple(e.vector), e.score) for e in estimates]
+        # Successive halving. The first campaign showed why a flat budget
+        # fails: at 4 games per evaluation the in-sample champion read 1.00 and
+        # held out at 0.38 — the GA was selecting on noise, and the measured
+        # conclusion was that allocation, not search, was the binding
+        # constraint. So: everyone gets a shallow look, survivors of each cut
+        # get twice the games, and the deep budget goes only to genomes still
+        # distinguishable from the field. `evaluate_many` accumulates per
+        # vector and stream, so each rung pays only for its NEW games.
+        alive: list = list(genomes)
+        games = self.games_per_eval
+        scores: dict = {}
+        while True:
+            # Unique vectors only: a converged population repeats genomes, the
+            # oracle dedupes them internally, and a zip against the raw list
+            # misaligns from the first repeat onward.
+            unique = list(dict.fromkeys(tuple(g) for g in alive))
+            estimates = oracle.evaluate_many(
+                unique,
+                games,
+                stream=generation,
+                tag=f"gen{generation}@{games}",
+                workers=self.workers,
+            )
+            # Keyed by INPUT genome, zipped: the oracle's estimates align with
+            # the vectors handed in, and keying by e.vector broke on the first
+            # duplicate-bearing population.
+            for genome, e in zip(unique, estimates):
+                scores[genome] = e.score
+            # The oracle drops decks the budget cannot cover from the END of
+            # the batch — a truncated rung means the meter is dry, so the
+            # ladder stops and the generation is ranked on what was bought.
+            truncated = len(estimates) < len(unique)
+            ranked = sorted((g for g in alive if tuple(g) in scores),
+                            key=lambda g: -scores[tuple(g)])
+            if truncated or not ranked or games >= self.games_cap \
+                    or len(ranked) <= max(self.elite, 2):
+                break
+            alive = ranked[: max(len(ranked) // 2, max(self.elite, 2))]
+            games *= 2
+        return sorted(((tuple(g), scores.get(tuple(g), float("-inf")))
+                       for g in genomes),
+                      key=lambda pair: -pair[1])
 
     def _next_generation(
         self,
