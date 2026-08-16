@@ -67,6 +67,14 @@ def normalise(text: str, card_name: str = "") -> str:
     whether the subject is the card's own name.
     """
     text = _REMINDER.sub(" ", text or "")
+    # One sentence, two printed orders: Overrun says "get +3/+3 and gain
+    # trample", Craterhoof says "gain trample and get +X/+X". The patterns read
+    # the first; canonicalise the second into it rather than teaching every
+    # pattern both orders.
+    text = re.sub(
+        r"\b(gains?) ([a-z ]+?) and (gets? [+\-](?:\d+|X)/[+\-](?:\d+|X))",
+        lambda m: f"{m.group(3)} and {m.group(1)} {m.group(2)}",
+        text)
     if card_name:
         text = text.replace(card_name, CARDNAME)
         short = card_name.split(",")[0].strip()
@@ -137,6 +145,9 @@ PATTERNS: tuple[Pattern, ...] = (
     # landfall payoffs and half the ramp package carry. Only the plain singular
     # form: "a green creature card" and "with mana value X" fail the type-word
     # position and land in residue, refused by the usual contract.
+    _p("define_x",
+       r"\bwhere x is the number of (creatures you control|creatures on the"
+       r" battlefield|lands you control)", "count"),
     _p("put_from_hand",
        r"\bputs? an? (land|creature|artifact|permanent) card from your hand"
        r" onto the battlefield( tapped)?", "what", "tapped"),
@@ -150,7 +161,8 @@ PATTERNS: tuple[Pattern, ...] = (
     _p("sacrifice",
        r"\bsacrifices? ((?:a|an|this|that) [\w' \-]{1,25}|it|cardname)", "what"),
     _p("return_to_hand", r"\breturns? ([^.]+?) to (?:its|their) owner'?s? hand", "target"),
-    _p("return_from_graveyard", r"\breturns? ([^.]+?) from your graveyard", "target"),
+    _p("return_from_graveyard",
+       r"\breturns? ([^.]+?) from your graveyard(?: to your hand)?", "target"),
     # --- board ----------------------------------------------------------
     _p("create_token", r"\bcreates? (\w+) ([^.]*?) tokens?", "amount", "what",
        numeric=("amount",)),
@@ -468,7 +480,7 @@ _RESIDUE_OK = frozenset({
 _SELF_UPSIDE = frozenset({
     "draw", "gain_life", "scry", "surveil", "put_counters", "create_token",
     "add_mana", "search_library", "shuffle", "reveal", "pump", "grant_ability",
-    "untap", "put_from_hand",
+    "untap", "put_from_hand", "return_from_graveyard", "define_x",
 })
 """Verbs whose "you may" is pure upside for the one making the choice.
 

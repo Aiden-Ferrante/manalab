@@ -34,7 +34,8 @@ IMPLEMENTED = frozenset(
     {"deal_damage", "destroy", "draw", "gain_life", "pump", "counter_spell",
      "put_counters", "shuffle", "search_library", "reveal",
      "create_token", "grant_ability", "add_mana", "ability_word",
-     "tap", "untap", "sacrifice", "put_from_hand"}
+     "tap", "untap", "sacrifice", "put_from_hand",
+     "return_from_graveyard", "define_x"}
 )
 
 COUNTER_KINDS = frozenset({"+1/+1", "-1/-1"})
@@ -156,10 +157,13 @@ matching one (lowest power+toughness, oldest first) — deterministic, so common
 random numbers survive, and the same crude-pilot philosophy the agents use.
 Anything else — "a creature with flying", "two lands" — is refused by name."""
 
-MASS_VERBS = frozenset({"deal_damage", "destroy"})
+MASS_VERBS = frozenset({"deal_damage", "destroy", "pump", "grant_ability"})
 """Verbs that may apply to a whole board.
 
-Sweepers only. `pump` is deliberately excluded — see `unsupported`.
+Mass pump and mass grants were refused while a pump was modelled as permanent
+counters — an anthem for the rest of the game is a different card. The
+until-end-of-turn modifiers removed that reason: `power_mod` and `granted`
+clear in cleanup, so Overrun means exactly what it says now.
 """
 """Verbs this module executes. `engine.fidelity` reads this — do not duplicate it."""
 
@@ -191,33 +195,17 @@ def unsupported(card: Card) -> tuple[str, ...]:
         if effect.verb not in IMPLEMENTED:
             reasons.append(f"verb not implemented: {effect.verb}")
             continue
-        spec = T.parse(effect.get("target"))
-        if spec is None:
-            reasons.append(f"target not understood: {effect.get('target')!r}")
-        elif spec.is_mass and effect.verb not in MASS_VERBS:
-            # A mass pump is refused, and this is the one place where refusing
-            # matters more than covering cards. A single pump is modelled as
-            # counters — wrong after this turn, bounded, and documented. Applied
-            # to every creature on the board it becomes a permanent global
-            # anthem that also buffs the opponent, which is not an approximation
-            # of the card, it is a different card.
-            reasons.append(f"{effect.verb} over a whole board needs a duration model")
-        if effect.verb == "add_mana" and _mana_added(effect) is None:
-            reasons.append(f"mana not understood: {effect.get('mana')!r}")
-        if effect.verb == "grant_ability":
-            granted = str(effect.get("ability", "")).strip().lower()
-            if granted not in COMBAT_KEYWORDS:
-                reasons.append(f"cannot grant: {granted!r}")
-        if effect.verb == "create_token":
-            if _token_card(effect) is None:
-                reasons.append(f"token not modelled: {effect.get('what')!r}")
-            if not isinstance(effect.get("amount", 1), int):
-                reasons.append(f"token count not a number: {effect.get('amount')!r}")
-        if effect.verb == "reveal" and \
-                str(effect.get("what", "")).strip().rstrip(".").lower() not in _REVEAL_NOOP:
-            reasons.append(f"reveal not understood: {effect.get('what')!r}")
-        if effect.verb == "search_library" and _fetch_plan(effect) is None:
-            reasons.append(f"library search not understood: {effect.get('what')!r}")
+        spec = None
+        if effect.verb != "return_from_graveyard":
+            spec = T.parse(effect.get("target"))
+            if spec is None:
+                reasons.append(f"target not understood: {effect.get('target')!r}")
+        elif spec is not None and spec.is_mass and effect.verb not in MASS_VERBS:
+            reasons.append(f"{effect.verb} over a whole board is not modelled")
+        if effect.verb == "return_from_graveyard":
+            what = str(effect.get("target", "")).strip().lower()
+            if not re.fullmatch(r"(?:a|target) [\w' ]*card", what):
+                reasons.append(f"graveyard return not understood: {what!r}")
         if effect.verb == "sacrifice":
             what = str(effect.get("what", "")).strip().lower()
             if what not in _SAC_SELF and what not in _SAC_KINDS:
@@ -228,8 +216,26 @@ def unsupported(card: Card) -> tuple[str, ...]:
                 reasons.append(f"counter kind not modelled: {kind!r}")
             if not isinstance(effect.get("amount", 1), int):
                 reasons.append(f"counter amount not a number: {effect.get('amount')!r}")
+        if effect.verb == "search_library" and _fetch_plan(effect) is None:
+            reasons.append(f"library search not understood: {effect.get('what')!r}")
+        if effect.verb == "create_token":
+            if _token_card(effect) is None:
+                reasons.append(f"token not modelled: {effect.get('what')!r}")
+            if not isinstance(effect.get("amount", 1), int):
+                reasons.append(f"token count not a number: {effect.get('amount')!r}")
+        if effect.verb == "grant_ability":
+            granted = str(effect.get("ability", "")).strip().lower()
+            if granted not in COMBAT_KEYWORDS:
+                reasons.append(f"cannot grant: {granted!r}")
+        if effect.verb == "add_mana" and _mana_added(effect) is None:
+            reasons.append(f"mana not understood: {effect.get('mana')!r}")
+        if effect.verb == "reveal" and \
+                str(effect.get("what", "")).strip().rstrip(".").lower() not in _REVEAL_NOOP:
+            reasons.append(f"reveal not understood: {effect.get('what')!r}")
         if effect.verb == "pump" and _pump_amount(effect) is None:
-            reasons.append(f"pump amount not understood: {effect.get('amount')!r}")
+            has_x = any(e.verb == "define_x" for e in card.effects)
+            if not (has_x and _pump_amount(effect, 1) is not None):
+                reasons.append(f"pump amount not understood: {effect.get('amount')!r}")
         if effect.verb in ("deal_damage", "draw", "gain_life") and \
                 not isinstance(effect.get("amount", 1), int):
             reasons.append(f"amount not a number: {effect.get('amount')!r}")
@@ -242,14 +248,20 @@ def plan_for(card: Card) -> Plan | None:
         return None
     pairs = []
     for effect in card.effects:
+        if effect.verb == "return_from_graveyard":
+            pairs.append((effect, T.NO_TARGET))
+            continue
         spec = T.parse(effect.get("target"))
         assert spec is not None  # guaranteed by unsupported() above
         pairs.append((effect, spec))
     return Plan(tuple(pairs))
 
 
-def _pump_amount(effect: Effect) -> tuple[int, int] | None:
-    match = _PUMP.match(str(effect.get("amount", "")))
+def _pump_amount(effect: Effect, x_value: int | None = None) -> tuple[int, int] | None:
+    raw = str(effect.get("amount", ""))
+    if x_value is not None and "X" in raw.upper():
+        raw = re.sub(r"[Xx]", str(x_value), raw)
+    match = _PUMP.match(raw)
     if match is None:
         return None
     return int(match.group(1)), int(match.group(2))
@@ -288,6 +300,11 @@ def apply_effects(
     """
     pairs = []
     for effect in effects:
+        # return_from_graveyard consumes its own "target" param — the choice is
+        # engine-made, so there is no TargetSpec to announce or re-check.
+        if effect.verb == "return_from_graveyard":
+            pairs.append((effect, T.NO_TARGET))
+            continue
         spec = T.parse(effect.get("target"))
         if spec is None:      # refused upstream by fidelity; belt and braces
             return
@@ -306,9 +323,34 @@ def _run(
     controller = spell.controller
     queue = list(chosen)
 
+    # "+X/+X … where X is the number of creatures you control": the defining
+    # clause trails the effect it defines, so X is fixed once, up front, from
+    # the board as it stands when the spell resolves (CR 608.2h's spirit).
+    x_value: int | None = None
+    for effect, _ in plan.effects:
+        if effect.verb == "define_x":
+            basis = str(effect.get("count", ""))
+            if basis == "creatures you control":
+                x_value = len(state.creatures(controller))
+            elif basis == "creatures on the battlefield":
+                x_value = len(state.creatures())
+            elif basis == "lands you control":
+                x_value = sum(1 for o in state.battlefield(controller) if o.is_land)
+
+    # A grant follows its subject: "Creatures you control get +X/+X and gain
+    # trample" puts the scope on the pump and prints the grant bare. Binding
+    # the bare grant to the preceding pump's subject is what makes Overrun and
+    # Craterhoof one sentence rather than a pump and a no-op.
+    prev_target: "T.Target | None" = None
+    prev_mass_mine = False
+
     for effect, spec in plan.effects:
+        if effect.verb == "define_x":
+            continue
         if spec.is_mass:
-            _apply_mass(state, spell, effect, log)
+            _apply_mass(state, spell, effect, log, spec, x_value)
+            prev_mass_mine = spec.kind is T.TargetKind.ALL_YOUR_CREATURES
+            prev_target = None
             continue
 
         target = None
@@ -319,19 +361,49 @@ def _run(
             if not T.still_legal(state, controller, spec, target):
                 log.append(f"{spell.card.name} fizzles: target is gone")
                 continue
+        if effect.verb == "grant_ability" and target is None:
+            if prev_mass_mine:
+                _apply_mass(state, spell, effect, log,
+                            T.TargetSpec(T.TargetKind.ALL_YOUR_CREATURES), x_value)
+                continue
+            target = prev_target
         _apply_one(state, spell, effect, target, log)
+        if effect.verb == "pump" and target is not None:
+            prev_target = target
+            prev_mass_mine = False
 
 
 def _apply_mass(
-    state: GameState, spell: GameObject, effect: Effect, log: list[str]
+    state: GameState, spell: GameObject, effect: Effect, log: list[str],
+    spec: "T.TargetSpec | None" = None, x_value: int | None = None,
 ) -> None:
-    """Apply a verb to every creature on the battlefield.
+    """Apply a verb to every creature in scope.
 
     The victim list is taken once, before anything is applied. Iterating the
     battlefield while moving creatures off it skips half of them, which would
     make a sweeper destroy every other creature and look like a shuffle bug.
     """
-    victims = [obj for obj in state.creatures() if obj.zone is Zone.BATTLEFIELD]
+    mine_only = spec is not None and spec.kind is T.TargetKind.ALL_YOUR_CREATURES
+    victims = [obj for obj in (state.creatures(spell.controller) if mine_only
+                               else state.creatures())
+               if obj.zone is Zone.BATTLEFIELD]
+    if effect.verb == "pump":
+        amounts = _pump_amount(effect, x_value)
+        if amounts is None:
+            return
+        power, toughness = amounts
+        for obj in victims:
+            obj.power_mod += power
+            obj.toughness_mod += toughness
+        log.append(f"{spell.card.name} pumps {len(victims)} creatures "
+                   f"{power:+}/{toughness:+}")
+        return
+    if effect.verb == "grant_ability":
+        granted = str(effect.get("ability", "")).strip().lower()
+        for obj in victims:
+            obj.granted.add(granted)
+        log.append(f"{spell.card.name} grants {granted} to {len(victims)}")
+        return
     if not victims:
         return
 
@@ -398,6 +470,17 @@ def _apply_one(
         who = target.player if (target and target.is_player) else controller
         state.draw(who, amount)
         log.append(f"{name}: P{who} draws {amount}")
+
+    elif verb == "return_from_graveyard":
+        # The controller's own choice, made greedily: the highest-cost card in
+        # the graveyard — the same declared-deterministic rule sacrifice and
+        # put_from_hand use, so common random numbers survive.
+        yard = state.graveyard(controller)
+        if not yard:
+            return
+        chosen_card = max(yard, key=lambda o: (o.card.cmc, o.id))
+        new = state.move(chosen_card, Zone.HAND)
+        log.append(f"{name}: returns {new.card.name} to hand")
 
     elif verb == "put_from_hand":
         kind = str(effect.get("what", "")).capitalize()

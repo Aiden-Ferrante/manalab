@@ -57,6 +57,8 @@ class TargetKind(Enum):
     NONCREATURE_SPELL = "noncreature_spell"
 
 
+    ALL_YOUR_CREATURES = "all_your_creatures"
+    """Every creature its controller has. Overrun's scope, and Craterhoof's."""
     ALL_CREATURES = "all_creatures"
     """Every creature on the battlefield. A *scope*, not a target.
 
@@ -70,7 +72,8 @@ SPELL_KINDS = frozenset(
     {TargetKind.SPELL, TargetKind.CREATURE_SPELL, TargetKind.NONCREATURE_SPELL}
 )
 
-MASS_KINDS = frozenset({TargetKind.ALL_CREATURES})
+MASS_KINDS = frozenset({TargetKind.ALL_CREATURES,
+                        TargetKind.ALL_YOUR_CREATURES})
 
 
 @dataclass(frozen=True)
@@ -115,6 +118,9 @@ _PHRASES: dict[str, TargetKind] = {
     # Board sweepers. "each other" and "all other" exclude the source, which for
     # an instant or sorcery is not a creature anyway — so they coincide here.
     # A permanent with that text is refused for its text regardless.
+    "creatures you control": TargetKind.ALL_YOUR_CREATURES,
+    "all creatures you control": TargetKind.ALL_YOUR_CREATURES,
+    "each creature you control": TargetKind.ALL_YOUR_CREATURES,
     "all creatures": TargetKind.ALL_CREATURES,
     "each creature": TargetKind.ALL_CREATURES,
     "all other creatures": TargetKind.ALL_CREATURES,

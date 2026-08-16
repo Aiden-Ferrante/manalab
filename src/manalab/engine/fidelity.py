@@ -22,7 +22,9 @@ from dataclasses import dataclass
 import manalab.engine.resolve as resolve
 import manalab.engine.activation as activation
 import manalab.engine.statics as statics
+import manalab.engine.targets as targets_mod
 import manalab.engine.triggers as triggers
+from manalab.cards.effects import normalise as _normalise
 from manalab.cards.model import Card
 from manalab.engine.mana import MULTI_MANA
 
@@ -57,7 +59,11 @@ def _residual_text(card: Card, skip: frozenset[str] = frozenset()) -> str:
     vanilla creature and a creature that only says "Flying" both reduce to the
     empty string, because the engine handles the second one completely.
     """
-    text = _REMINDER.sub("", card.oracle_text or "")
+    # Normalised, exactly as the parser reads it: the handled-lines set holds
+    # ability text AFTER name substitution and clause canonicalisation, so
+    # comparing raw print against it re-refused every card whose text the
+    # normaliser touches — Craterhoof stayed "unexecuted" with a perfect parse.
+    text = _normalise(card.oracle_text or "", card.name)
     kept: list[str] = []
 
     for line in text.splitlines():
@@ -192,7 +198,18 @@ def _handled_lines(card: Card) -> frozenset[str]:
             continue
         if any(e.verb not in resolve.IMPLEMENTED for e in ability.effects):
             continue
-        if any(e.get("target") for e in ability.effects):
+        # "No targets in a trigger" was written when every target was a
+        # choice needing an announcement step. A mass scope ("creatures you
+        # control") chooses nothing, and a graveyard return is engine-chosen —
+        # neither needs announcing, so neither disqualifies the trigger.
+        def _needs_announcing(e) -> bool:
+            raw = e.get("target")
+            if not raw or e.verb == "return_from_graveyard":
+                return False
+            spec = targets_mod.parse(raw)
+            return spec is None or spec.needs_target
+
+        if any(_needs_announcing(e) for e in ability.effects):
             continue
         if ability.text:
             handled.add(ability.text.strip().lower())

@@ -70,8 +70,11 @@ def test_understood_phrases_parse() -> None:
 def test_unknown_phrases_are_refused_not_guessed() -> None:
     """The whole safety property. A guess here makes illegal plays look legal."""
     for phrase in ["target nonblack creature", "target creature an opponent controls",
-                   "target attacking or blocking creature", "creatures you control"]:
+                   "target attacking or blocking creature"]:
         assert T.parse(phrase) is None, f"{phrase!r} was silently accepted"
+    # "creatures you control" moved out of this list the day mass pump gained a
+    # duration model: it is a SCOPE now, understood and never a target.
+    assert T.parse("creatures you control").is_mass
 
 
 def test_mass_scopes_are_understood_but_are_not_targets() -> None:
@@ -391,12 +394,26 @@ def test_a_sweeper_is_castable_with_no_creatures_out(store) -> None:
     assert casts[0].targets == (), "a sweeper must not enumerate targets"
 
 
-def test_a_mass_pump_is_refused(store) -> None:
-    """Pump-as-counters is a bounded lie for one creature and a different card
-    entirely when applied permanently to every creature on the board."""
-    reasons = resolve.unsupported(store.by_name("Languish"))
-    assert reasons
-    assert any("duration model" in r for r in reasons)
+def test_a_mass_pump_works_now_that_pumps_expire(store) -> None:
+    """This asserted the opposite while a pump was permanent counters — a
+    whole-board permanent anthem was a different card. The until-end-of-turn
+    modifiers removed that reason, so Overrun means what it says."""
+    from manalab.engine import fidelity
+
+    overrun = store.by_name("Overrun")
+    assert fidelity.assess(overrun).faithful, fidelity.assess(overrun).reasons
+
+    state = GameState.new([[], []])
+    mine = state.create(store.by_name("Grizzly Bears"), owner=0,
+                        zone=Zone.BATTLEFIELD, quiet=True)
+    theirs = state.create(store.by_name("Grizzly Bears"), owner=1,
+                          zone=Zone.BATTLEFIELD, quiet=True)
+    spell = state.create(overrun, owner=0, zone=Zone.STACK)
+    resolve.apply(state, spell, [], state.log)
+
+    assert (mine.power, mine.toughness) == (5, 5)
+    assert mine.has("Trample"), "the mass grant missed"
+    assert (theirs.power, theirs.toughness) == (2, 2), "scope leaked to the opponent"
 
 
 # --- counters and shuffling ---------------------------------------------
@@ -649,3 +666,51 @@ def test_an_ability_word_is_a_no_op_because_the_rules_say_so(store) -> None:
     assert [e.verb for e in ability.effects] == ["ability_word", "gain_life"]
     assert ability.trigger, "the word swallowed the trigger it labels"
     assert "ability_word" not in " ".join(R.unsupported(card))
+
+
+def test_craterhoof_behemoth_does_the_whole_thing(store) -> None:
+    """The finisher, end to end from the real store: ETB trigger, X counted
+    from the board at resolution, the team pumped and granted trample, the
+    hoof itself included — and none of it survives cleanup."""
+    from manalab.engine import fidelity
+
+    hoof = store.by_name("Craterhoof Behemoth")
+    assert fidelity.assess(hoof).faithful, fidelity.assess(hoof).reasons
+
+    state = GameState.new([[], []])
+    bears = [state.create(store.by_name("Grizzly Bears"), owner=0,
+                          zone=Zone.BATTLEFIELD, quiet=True) for _ in range(3)]
+    entered = state.create(hoof, owner=0, zone=Zone.BATTLEFIELD, quiet=True)
+
+    trigger = next(a for a in hoof.abilities if a.kind == "triggered")
+    entry = state.create(hoof, owner=0, zone=Zone.STACK, controller=0)
+    entry.trigger = trigger
+    entry.source_id = entered.id
+    resolve.apply_effects(state, entry, trigger.effects, (), state.log)
+
+    # X = 4 creatures on the board when it resolved.
+    assert (bears[0].power, bears[0].toughness) == (6, 6)
+    assert bears[0].has("Trample")
+    assert (entered.power, entered.toughness) == (9, 9), "the hoof pumps itself"
+
+
+def test_eternal_witness_returns_the_biggest_card(store) -> None:
+    """Engine-chosen greedily — the declared rule — and from the real store."""
+    from manalab.engine import fidelity
+
+    witness = store.by_name("Eternal Witness")
+    assert fidelity.assess(witness).faithful, fidelity.assess(witness).reasons
+
+    state = GameState.new([[], []])
+    for name in ("Grizzly Bears", "Craterhoof Behemoth"):
+        obj = state.create(store.by_name(name), owner=0, zone=Zone.BATTLEFIELD,
+                           quiet=True)
+        state.move(obj, Zone.GRAVEYARD)
+
+    trigger = next(a for a in witness.abilities if a.kind == "triggered")
+    entry = state.create(witness, owner=0, zone=Zone.STACK, controller=0)
+    entry.trigger = trigger
+    resolve.apply_effects(state, entry, trigger.effects, (), state.log)
+
+    assert [o.card.name for o in state.hand(0)] == ["Craterhoof Behemoth"], \
+        "greedy means the 8-drop, not the bear"
