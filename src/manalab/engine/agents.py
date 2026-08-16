@@ -218,6 +218,11 @@ class CurveAgent:
         obj = state.objects.get(action.object_id)
         if obj is None:
             return 0.0
+        if obj.activations_this_turn >= 1:
+            # Once per permanent per turn — pilot POLICY, not a rule. The rules
+            # allow repeats, and a greedy pilot plus two untap-each-other
+            # creatures is an infinite priority loop, found by the campaign.
+            return 0.0
 
         score = 0.0
         for effect in obj.card.abilities[action.index].effects:

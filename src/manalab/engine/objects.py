@@ -97,6 +97,11 @@ class GameObject:
     it came from. "Sacrifice it" has to know which permanent *it* is — the stack
     entry is a different object (CR 113.7a), so without this link a
     self-sacrifice has nothing to point at."""
+    activations_this_turn: int = 0
+    """How often this permanent's abilities have been activated this turn.
+    The RULES allow repeats; the crude pilot declines them (see CurveAgent) —
+    two `{T}: untap target creature` creatures aimed at each other are an
+    infinite loop the first real campaign found in its second seed."""
     loyalty_used: bool = False
     """A loyalty ability has been activated this turn (CR 606.3 allows one per
     planeswalker per turn). Cleared at the start of every turn — the limit is

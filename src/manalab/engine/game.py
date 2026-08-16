@@ -111,6 +111,7 @@ class Game:
         state.players[state.active_player].begin_turn()
         for obj in state.battlefield():
             obj.loyalty_used = False
+            obj.activations_this_turn = 0
         state.log.append(f"--- turn {state.turn} ({state.players[state.active_player].name})")
 
         for step in TURN:
@@ -327,6 +328,7 @@ class Game:
                 state.move(obj, Zone.GRAVEYARD)
             if action.targets:
                 self._targets[entry.id] = action.targets
+            obj.activations_this_turn += 1
             state.log.append(f"activates {obj.card.name} #{action.index}")
         else:  # pragma: no cover - the priority loop offers nothing else
             raise NotImplementedError(action)

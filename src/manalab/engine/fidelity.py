@@ -190,7 +190,7 @@ def _handled_lines(card: Card) -> frozenset[str]:
         # An activated ability whose cost we can pay and whose every verb we can
         # resolve is executed, not ignored — the same bar the other branches use.
         if index in payable and ability.effects and not ability.unparsed \
-                and all(e.verb in resolve.IMPLEMENTED for e in ability.effects) \
+                and not resolve.unsupported_effects(ability.effects) \
                 and ability.text:
             handled.add(ability.text.strip().lower())
     for ability in card.abilities:
@@ -203,7 +203,7 @@ def _handled_lines(card: Card) -> frozenset[str]:
     for _, ability in triggers.watched_by(card):
         if ability.unparsed or not ability.effects:
             continue
-        if any(e.verb not in resolve.IMPLEMENTED for e in ability.effects):
+        if resolve.unsupported_effects(ability.effects):
             continue
         # "No targets in a trigger" was written when every target was a
         # choice needing an announcement step. A mass scope ("creatures you

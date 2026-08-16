@@ -190,8 +190,18 @@ def unsupported(card: Card) -> tuple[str, ...]:
     if not card.effects:
         return ("no parsed effects",)
 
+    return unsupported_effects(card.effects)
+
+
+def unsupported_effects(effects) -> tuple[str, ...]:
+    """The same checks, for an ability's effects rather than a whole card.
+
+    Triggers and activations validate through here — they used to check only
+    that verbs were implemented, so a trigger carrying "draw X" passed fidelity
+    and crashed the first real game that fired it. One loop, both callers.
+    """
     reasons: list[str] = []
-    for effect in card.effects:
+    for effect in effects:
         if effect.verb not in IMPLEMENTED:
             reasons.append(f"verb not implemented: {effect.verb}")
             continue
@@ -238,7 +248,7 @@ def unsupported(card: Card) -> tuple[str, ...]:
                 str(effect.get("what", "")).strip().rstrip(".").lower() not in _REVEAL_NOOP:
             reasons.append(f"reveal not understood: {effect.get('what')!r}")
         if effect.verb == "pump" and _pump_amount(effect) is None:
-            has_x = any(e.verb == "define_x" for e in card.effects)
+            has_x = any(e.verb == "define_x" for e in effects)
             if not (has_x and _pump_amount(effect, 1) is not None):
                 reasons.append(f"pump amount not understood: {effect.get('amount')!r}")
         if effect.verb in ("deal_damage", "draw", "gain_life") and \
@@ -468,7 +478,11 @@ def _apply_one(
         log.append(f"{name} counters {countered.card.name}")
 
     elif verb == "draw":
-        amount = int(effect.get("amount", 1))
+        raw = effect.get("amount", 1)
+        if not isinstance(raw, int):
+            log.append(f"{name}: unresolvable amount {raw!r}, does nothing")
+            return
+        amount = raw
         # "Target player draws three cards" draws for the target, not the
         # caster — the drop that had Ancestral Recall drawing for the wrong
         # player. No target means the caster, as before.
