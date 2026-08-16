@@ -34,7 +34,7 @@ IMPLEMENTED = frozenset(
     {"deal_damage", "destroy", "draw", "gain_life", "pump", "counter_spell",
      "put_counters", "shuffle", "search_library", "reveal",
      "create_token", "grant_ability", "add_mana", "ability_word",
-     "tap", "untap", "sacrifice"}
+     "tap", "untap", "sacrifice", "put_from_hand"}
 )
 
 COUNTER_KINDS = frozenset({"+1/+1", "-1/-1"})
@@ -398,6 +398,21 @@ def _apply_one(
         who = target.player if (target and target.is_player) else controller
         state.draw(who, amount)
         log.append(f"{name}: P{who} draws {amount}")
+
+    elif verb == "put_from_hand":
+        kind = str(effect.get("what", "")).capitalize()
+        in_hand = [o for o in state.hand(controller)
+                   if kind == "Permanent" and o.card.is_permanent
+                   or kind in o.card.type_line]
+        if not in_hand:
+            return              # a legal outcome: nothing to put
+        # The declared choice rule, same as sacrifice: deterministic — the
+        # oldest matching card — so common random numbers survive.
+        chosen = min(in_hand, key=lambda o: o.id)
+        new = state.move(chosen, Zone.BATTLEFIELD, controller=controller)
+        if effect.get("tapped"):
+            new.tapped = True
+        log.append(f"{name}: puts {new.card.name} onto the battlefield")
 
     elif verb == "sacrifice":
         what = str(effect.get("what", "")).strip().lower()

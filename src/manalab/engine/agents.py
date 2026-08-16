@@ -183,7 +183,7 @@ class CurveAgent:
         return (card.cmc, quality)
 
     HELPFUL = frozenset({"draw", "gain_life", "put_counters", "create_token",
-                         "pump", "grant_ability", "untap"})
+                         "pump", "grant_ability", "untap", "put_from_hand"})
     HARMFUL = frozenset({"deal_damage", "destroy", "tap"})
 
     def _activation_value(self, state: GameState, player: int,

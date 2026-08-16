@@ -133,6 +133,13 @@ PATTERNS: tuple[Pattern, ...] = (
     _p("discard", r"\bdiscards? (\w+) cards?", "amount", numeric=("amount",)),
     _p("mill", r"\bmills? (\w+) cards?", "amount", numeric=("amount",)),
     _p("search_library", r"\bsearch(?:es)? your library for ([^.]+)", "what"),
+    # "put a land card from your hand onto the battlefield" — the body most
+    # landfall payoffs and half the ramp package carry. Only the plain singular
+    # form: "a green creature card" and "with mana value X" fail the type-word
+    # position and land in residue, refused by the usual contract.
+    _p("put_from_hand",
+       r"\bputs? an? (land|creature|artifact|permanent) card from your hand"
+       r" onto the battlefield( tapped)?", "what", "tapped"),
     _p("scry", r"\bscry (\d+)", "amount", numeric=("amount",)),
     _p("surveil", r"\bsurveil (\d+)", "amount", numeric=("amount",)),
     _p("shuffle", r"\bshuffles?\b"),
@@ -461,7 +468,7 @@ _RESIDUE_OK = frozenset({
 _SELF_UPSIDE = frozenset({
     "draw", "gain_life", "scry", "surveil", "put_counters", "create_token",
     "add_mana", "search_library", "shuffle", "reveal", "pump", "grant_ability",
-    "untap",
+    "untap", "put_from_hand",
 })
 """Verbs whose "you may" is pure upside for the one making the choice.
 

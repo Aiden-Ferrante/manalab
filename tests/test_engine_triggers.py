@@ -403,3 +403,64 @@ def test_a_creature_entering_is_not_a_land_entering():
         owner=0, zone=Zone.BATTLEFIELD)
     game._collect_triggers()
     assert state.zone(Zone.STACK) == []
+
+
+# --- put a land card from your hand onto the battlefield ------------------
+
+
+def test_put_from_hand_parses_and_is_greedy_yes():
+    from manalab.cards.effects import parse_text
+
+    parsed = parse_text(
+        "You may put a land card from your hand onto the battlefield tapped.",
+        "Expedition")
+    assert parsed.fully_parsed
+    (effect,) = parsed.abilities[0].effects
+    assert effect.verb == "put_from_hand"
+    assert effect.get("what") == "land"
+
+
+def test_a_qualified_form_is_still_refused():
+    from manalab.cards.effects import parse_text
+
+    parsed = parse_text(
+        "Put a creature card with mana value X from your hand onto the battlefield.",
+        "Elvish Piper")
+    assert not parsed.fully_parsed
+
+
+def test_put_from_hand_moves_the_land_and_fires_landfall():
+    """The whole composition: the put enters through `state.move`, so a
+    landfall watcher sees it exactly as a played or fetched land."""
+    from manalab.engine import resolve
+
+    state, game = game_with()
+    state.create(landfall_watcher(), owner=0, zone=Zone.BATTLEFIELD, quiet=True)
+    state.create(FOREST, owner=0, zone=Zone.HAND)
+    spell = state.create(
+        Card("gs", "Growth Spasm", parse_cost("{2}{G}"), "Sorcery",
+             effects=(Effect("put_from_hand", (("what", "land"),
+                                               ("tapped", " tapped"))),)),
+        owner=0, zone=Zone.STACK)
+    state.events.clear()
+    resolve.apply(state, spell, [], state.log)
+
+    lands = [o for o in state.battlefield(0) if o.is_land]
+    assert len(lands) == 1 and lands[0].tapped
+    game._collect_triggers()
+    # The spell object itself is still on the stack — `resolve.apply` does not
+    # move it; `_resolve_top` does. The trigger is the entry that carries one.
+    fired = [o for o in state.zone(Zone.STACK) if o.trigger is not None]
+    assert len(fired) == 1, "landfall did not see the put"
+
+
+def test_put_from_hand_with_an_empty_hand_is_legal():
+    from manalab.engine import resolve
+
+    state, _ = game_with()
+    spell = state.create(
+        Card("gs", "Growth Spasm", parse_cost("{2}{G}"), "Sorcery",
+             effects=(Effect("put_from_hand", (("what", "land"),)),)),
+        owner=0, zone=Zone.STACK)
+    resolve.apply(state, spell, [], state.log)
+    assert [o for o in state.battlefield(0) if o.is_land] == []
