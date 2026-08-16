@@ -63,6 +63,34 @@ class Pool:
         return sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
 
 
+def precon_fidelity(counts, cards) -> dict:
+    """The executed fraction of an imported deck — the number that must travel
+    with any precon used as an opponent. Whole-deck fractions: a precon playing
+    at 0.4 fidelity is a bias every result against it inherits.
+
+    Lives here, not in `cards.precons`, for the usual reason: it needs the
+    engine's account of itself, and the architecture test caught the first
+    draft placed wrongly — third time that test has earned its keep.
+    """
+    total = sum(counts.values())
+    known = faithful_count = 0
+    refused: list[str] = []
+    for name, count in counts.items():
+        card = cards.get(name)
+        if card is None:
+            refused.append(name)
+            continue
+        known += count
+        if not fidelity.assess(card).reasons:
+            faithful_count += count
+        else:
+            refused.append(name)
+    return {"cards": total,
+            "known": known / total if total else 0.0,
+            "faithful": faithful_count / total if total else 0.0,
+            "refused": tuple(sorted(refused))}
+
+
 def best_effects(card: Card, oracle) -> Card:
     """Our parse, falling back to Forge's encoding when ours cannot play the card.
 

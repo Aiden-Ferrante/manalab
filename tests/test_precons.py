@@ -47,7 +47,9 @@ def test_fidelity_report_counts_the_whole_deck():
     cards = {c.name: c for c in (forest, bear, weird)}
 
     _, counts = precons.as_decklist(DECK)
-    report = precons.fidelity_of(counts, cards)
+    from manalab.evaluate.pool import precon_fidelity
+
+    report = precon_fidelity(counts, cards)
 
     assert report["cards"] == 46
     assert report["known"] == pytest.approx(45 / 46)      # Unknowable Horror absent
