@@ -120,7 +120,12 @@ def assess(card: Card) -> Fidelity:
     # admitted — which is what makes commanders expressible at all, since every
     # commander is legendary.
 
-    if not card.is_creature:
+    if not card.is_creature and not _does_something(card):
+        # This used to fire for every non-creature permanent, which was true when
+        # the engine had neither static nor activated abilities: an artifact or
+        # enchantment really did just sit there. It now runs both, so an anthem
+        # is a card and only a permanent with nothing the engine can execute is
+        # inert. Vanilla creatures are still fine — a body is a contribution.
         reasons.append("non-creature permanent; sits on the battlefield inertly")
 
     if card.is_creature and card.base_power is None:
@@ -141,6 +146,18 @@ def assess(card: Card) -> Fidelity:
         reasons.append("rules text the engine does not execute")
 
     return Fidelity(card.name, tuple(reasons))
+
+
+def _does_something(card: Card) -> bool:
+    """Whether this permanent has any ability the engine actually runs.
+
+    Statics, activated abilities and triggers all count. A permanent with none
+    of them contributes nothing but a body, which for a non-creature is nothing
+    at all.
+    """
+    return bool(statics.applicable(card)
+                or activation.activatable(card)
+                or triggers.watched_by(card))
 
 
 def _handled_lines(card: Card) -> frozenset[str]:

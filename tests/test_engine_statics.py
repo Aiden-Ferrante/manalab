@@ -137,3 +137,17 @@ def test_an_attachment_buff_is_refused():
 
 def test_a_static_the_engine_applies_makes_its_card_faithful():
     assert fidelity.assess(self_buff()).faithful, fidelity.assess(self_buff()).reasons
+
+
+def test_an_enchantment_with_a_supported_static_is_a_card_now():
+    """The blanket "non-creature permanents sit there inertly" refusal was true
+    when the engine had neither static nor activated abilities. It runs both, so
+    an anthem is a card."""
+    report = fidelity.assess(anthem())
+    assert report.faithful, report.reasons
+
+
+def test_a_permanent_with_nothing_the_engine_runs_is_still_inert():
+    card = Card("i", "Inert Thing", parse_cost("{2}"), "Artifact",
+                oracle_text="Whenever a player casts a spell, scry 1.")
+    assert any("inertly" in r for r in fidelity.assess(card).reasons)
