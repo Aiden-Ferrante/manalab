@@ -1,6 +1,15 @@
 // Goreclaw stompy — manalab pipeline, 2026-08-16
-// Measured: 5/12 vs Rebellion Rising / Tricky Terrain / Paradox Power (Forge).
-// One table, 12 games — a lead, not an established win rate.
+//
+// RETRACTED 2026-08-17. The 5/12 originally recorded here was wrong twice
+// over: clock-capped games are DRAWS that the parser scored as wins, and the
+// 420s clock also starved the AI's thinking budget. Re-measured against the
+// same table with a 1800s clock and a corrected parser:
+//
+//     stompy 0/14 decided     tokens 3/15     counters 3/15     landfall 0/16
+//
+// This deck is the WORST of the four candidates, not the best. It is kept
+// because it is a legal, playable mono-green list and because the retraction
+// is part of its record — not because the search found anything good.
 
 1 Goreclaw, Terror of Qal Sisma  // Commander
 
