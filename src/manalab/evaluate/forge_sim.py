@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import sqlite3
 import subprocess
@@ -84,8 +85,13 @@ def write_dck(name: str, commander: str, counts: Mapping[str, int],
             count -= 1
         if count > 0:
             lines.append(f"{count} {card_name}")
+    # Atomic: the bulk runner has many threads writing decks while other JVMs
+    # read them, and a torn read of a half-written deck file is a corrupt game
+    # that looks like a rules result.
     path = directory / f"{name}.dck"
-    path.write_text("\n".join(lines) + "\n")
+    tmp = path.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
+    tmp.write_text("\n".join(lines) + "\n")
+    os.replace(tmp, path)
     return path
 
 
