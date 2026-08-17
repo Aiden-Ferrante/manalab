@@ -42,6 +42,47 @@ FORGE_DECKS = Path.home() / ".forge/decks/commander"
 _GAME_RESULT = re.compile(r"Game Result: Game \d+ ended in \d+ ms\. (.+?) has won")
 _DRAW = re.compile(r"Game Result: .*draw", re.I)
 
+PARSE_VERSION = 2
+"""Bumped when the meaning of a parsed result changes, and part of the cache
+key so a stored result computed by an older, wronger parser is never reused.
+
+v2: clock-capped games are draws, not wins. Forge expresses a timed-out game
+by logging EVERY player as "has won because all opponents have lost", then
+naming one of them on the single `Game Result` line. v1 read that line and
+credited the named player. Measured at a 25s clock: of 9 capped games, 8 were
+named for seat Ai(2) and 1 for Ai(1) — so a draw was a phantom win for one
+opponent roughly nine times in ten, while the candidate always sits in seat 1.
+At the production 420s clock, 2 of 8 games capped, which is enough of the
+sample to matter. Draws are now excluded from the win rate and reported
+separately."""
+
+
+def parse_results(stdout: str, candidate: str) -> list[float | None]:
+    """One entry per game: 1.0 candidate won, 0.0 lost, None the game drew.
+
+    A game's outcome block starts at `Game Outcome: Turn` and lists one line
+    per player. Exactly one "has won" is a real result; more than one means
+    nobody actually won and the game hit the clock.
+    """
+    results: list[float | None] = []
+    winners_in_block = 0
+    for line in stdout.splitlines():
+        if "Game Outcome: Turn" in line:
+            winners_in_block = 0
+            continue
+        if "Game Outcome" in line and "has won" in line:
+            winners_in_block += 1
+            continue
+        found = _GAME_RESULT.search(line)
+        if found:
+            results.append(None if winners_in_block > 1
+                           else (1.0 if candidate in found.group(1) else 0.0))
+            winners_in_block = 0
+        elif _DRAW.search(line):
+            results.append(None)
+            winners_in_block = 0
+    return results
+
 TOTAL_JVMS = 14
 _SLOTS = threading.BoundedSemaphore(TOTAL_JVMS)
 """One global budget for concurrent Forge processes, whatever spawns them.
@@ -68,7 +109,7 @@ def _cache() -> sqlite3.Connection:
 def _cache_key(candidate_counts, commander, opponents, seed, games, clock) -> str:
     payload = json.dumps([sorted(candidate_counts.items()), commander,
                           [(n, g, sorted(c.items())) for n, g, c in opponents],
-                          seed, games, clock])
+                          seed, games, clock, PARSE_VERSION])
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
@@ -93,6 +134,25 @@ def write_dck(name: str, commander: str, counts: Mapping[str, int],
     tmp.write_text("\n".join(lines) + "\n")
     os.replace(tmp, path)
     return path
+
+
+def _result(deck_name: str, evaluator: str, played: Sequence[float | None],
+            seed: int) -> EvalResult:
+    """Win rate over DECIDED games; draws reported, never scored as losses.
+
+    Scoring a draw 0 would punish the candidate for a game nobody won, and
+    scoring it as a win credits whichever seat Forge happened to name. Both
+    are wrong; excluding it and reporting the rate separately is not."""
+    decided = [w for w in played if w is not None]
+    draws = len(played) - len(decided)
+    return EvalResult(
+        deck_name=deck_name, evaluator=evaluator,
+        n_games=len(decided), seed=seed,
+        metrics={"win_rate": sum(decided) / len(decided) if decided else 0.0,
+                 "draw_rate": draws / len(played) if played else 0.0,
+                 "games_played": float(len(played))},
+        samples={"win_rate": tuple(decided)},
+    )
 
 
 class ForgeSimEvaluator:
@@ -138,11 +198,7 @@ class ForgeSimEvaluator:
             row = con.execute("SELECT samples FROM results WHERE key=?",
                               (key,)).fetchone()
         if row:
-            wins = json.loads(row[0])
-            return EvalResult(deck_name=deck_name, evaluator=self.evaluator,
-                              n_games=len(wins), seed=seed,
-                              metrics={"win_rate": sum(wins) / max(len(wins), 1)},
-                              samples={"win_rate": tuple(wins)})
+            return _result(deck_name, self.evaluator, json.loads(row[0]), seed)
         FORGE_DECKS.mkdir(parents=True, exist_ok=True)
 
         candidate = f"cand_{deck_name}"[:40].replace(" ", "_")
@@ -153,7 +209,7 @@ class ForgeSimEvaluator:
             names.append(safe)
             write_dck(safe, general, opp_counts, FORGE_DECKS)
 
-        def run_chunk(chunk_seed: int, games: int) -> list[float]:
+        def run_chunk(chunk_seed: int, games: int) -> list[float | None]:
             cmd = [str(JAVA), "-Xmx3g",
                    # AppCDS: cache the class-loading half of JVM startup across
                    # runs. First run writes the archive, later runs boot faster.
@@ -166,13 +222,7 @@ class ForgeSimEvaluator:
                 proc = subprocess.run(cmd, capture_output=True, text=True,
                                       cwd=FORGE_JAR.parent,
                                       timeout=games * self.clock_seconds + 300)
-            chunk_wins: list[float] = []
-            for line in proc.stdout.splitlines():
-                found = _GAME_RESULT.search(line)
-                if found:
-                    chunk_wins.append(1.0 if candidate in found.group(1) else 0.0)
-                elif _DRAW.search(line):
-                    chunk_wins.append(0.0)
+            chunk_wins = parse_results(proc.stdout, candidate)
             if len(chunk_wins) != games:
                 raise RuntimeError(
                     f"expected {games} results at seed {chunk_seed}, parsed "
@@ -183,7 +233,7 @@ class ForgeSimEvaluator:
         base, extra = divmod(n_games, workers)
         chunks = [(seed + 1000 * i, base + (1 if i < extra else 0))
                   for i in range(workers) if base + (1 if i < extra else 0) > 0]
-        wins: list[float] = []
+        wins: list[float | None] = []
         if len(chunks) == 1:
             wins = run_chunk(*chunks[0])
         elif futility is None:
@@ -202,17 +252,12 @@ class ForgeSimEvaluator:
                     wins.extend(w for chunk in pool_.map(
                         lambda c: run_chunk(*c), wave) for w in chunk)
                 remaining = n_games - len(wins)
-                if remaining and futility(int(sum(wins)), len(wins), remaining):
+                decided_now = [w for w in wins if w is not None]
+                if remaining and futility(int(sum(decided_now)),
+                                          len(decided_now), remaining):
                     break
 
         with _CACHE_LOCK, _cache() as con:
             con.execute("INSERT OR REPLACE INTO results VALUES (?, ?)",
                         (key, json.dumps(wins)))
-        n_games = len(wins)
-
-        return EvalResult(
-            deck_name=deck_name, evaluator=self.evaluator,
-            n_games=n_games, seed=seed,
-            metrics={"win_rate": sum(wins) / n_games},
-            samples={"win_rate": tuple(wins)},
-        )
+        return _result(deck_name, self.evaluator, wins, seed)
