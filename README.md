@@ -8,19 +8,19 @@ Deckbuilding search over Magic: the Gathering: a seeded, reproducible simulator 
 
 ```bash
 uv venv && uv pip install -e '.[dev]'
-.venv/bin/pytest -q                        # fresh clone: 360 passed, 31 skipped
+.venv/bin/pytest -q                        # fresh clone: 574 passed, 41 skipped
 .venv/bin/manalab fetch && .venv/bin/manalab build   # ~25 MB from Scryfall -> data/cards.duckdb
-.venv/bin/pytest -q                        # with card data: 391 passed
+.venv/bin/pytest -q                        # with card data: 615 passed
 ```
 
-No card data is in this repo. It is downloaded at runtime from Scryfall's public bulk export into `data/`, which is gitignored and never redistributed. The 31 skipped tests are the ones that read real cards.
+No card data is in this repo. Cards are downloaded at runtime from Scryfall's public bulk export (`manalab fetch`); the precon examples also pull official deck lists from MTGJSON into `data/precons/`. `data/` is gitignored and never redistributed. The 41 skipped tests are the ones that read real cards.
 
 ## What went wrong / what I learned
 
-- **A green suite is not a correct model.** `card_from_scryfall` (`src/manalab/cards/model.py:212`) never reads `card_faces`, so on 2026-08-15 an audit found 746 cards with the wrong mana value (494 double-faced cards compute to 0, castable off zero lands), 225 adventure/prepare cards with both halves' costs summed, and 46 double-faced lands that enter tapped modelled as untapped. All three passed 391 tests. The fidelity guard refuses every faced card, so none reached the pool the search trusts; the `manalab sim` decklist path was not guarded.
-- **Retraction 1** (`e77ec90`, `reports/README.md`): four single-run colour tournaments, narrated as a trend, were smaller than the measured ±0.116 seed-to-seed noise floor. Kept and marked retracted, not deleted.
-- **Retraction 2** (`9b18d79`, on the `fix/engine-faithfulness-and-playable-corpus` branch): a deck's 5/12 win rate counted clock-capped draws as wins; re-measured, it was the worst of four candidates, not the best.
-- **Retraction 3** (`reports/README.md` on the same branch): every archived run was measured through an engine with three silent card-execution defects, so all of it was archived as not current.
+- **A green suite is not a correct model.** `card_from_scryfall` (`src/manalab/cards/model.py:267`) never reads `card_faces`, so on 2026-08-15 an audit found 746 cards with the wrong mana value (494 double-faced cards compute to 0, castable off zero lands), 225 adventure/prepare cards with both halves' costs summed, and 46 double-faced lands that enter tapped modelled as untapped. All three passed 391 tests. The fidelity guard refuses every faced card, so none reached the pool the search trusts; the `manalab sim` decklist path was not guarded.
+- **Retraction 1** (`e77ec90`, `reports/README.md:56-60`): four single-run colour tournaments, narrated as a trend, were smaller than the measured ±0.116 seed-to-seed noise floor. Kept and marked retracted, not deleted.
+- **Retraction 2** (`9b18d79`, `decks/stompy-goreclaw.txt:3-12`): a deck's 5/12 win rate counted clock-capped draws as wins; re-measured, it was the worst of four candidates, not the best.
+- **Retraction 3** (`c9b0b0a`, `4251b07`, `reports/README.md:5-25`): every archived run was measured through an engine with three silent card-execution defects (wrong pump arithmetic, unread text, "you" meaning any player), which also passed the 391-test suite; all of it was archived as not current.
 
 The goal is to test strategy theories by simulation. The design bet is that for
 deckbuilding search, **the objective function matters more than simulator
