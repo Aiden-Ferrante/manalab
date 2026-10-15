@@ -1,6 +1,26 @@
 # manalab
 
-Deckbuilding search over Magic: the Gathering, with a swappable game model.
+Deckbuilding search over Magic: the Gathering: a seeded, reproducible simulator behind a swappable evaluator seam, with search and statistics built to be checked.
+
+**Result:** errors found and retracted rather than shipped. A 2026-08-15 audit found 746 cards with the wrong mana value, 225 with summed costs and 46 mis-modelled enters-tapped lands, all of which had passed the 391-test green suite at `f366fd7`; three results have been publicly retracted.
+
+## Quickstart
+
+```bash
+uv venv && uv pip install -e '.[dev]'
+.venv/bin/pytest -q                        # fresh clone: 360 passed, 31 skipped
+.venv/bin/manalab fetch && .venv/bin/manalab build   # ~25 MB from Scryfall -> data/cards.duckdb
+.venv/bin/pytest -q                        # with card data: 391 passed
+```
+
+No card data is in this repo. It is downloaded at runtime from Scryfall's public bulk export into `data/`, which is gitignored and never redistributed. The 31 skipped tests are the ones that read real cards.
+
+## What went wrong / what I learned
+
+- **A green suite is not a correct model.** `card_from_scryfall` (`src/manalab/cards/model.py:212`) never reads `card_faces`, so on 2026-08-15 an audit found 746 cards with the wrong mana value (494 double-faced cards compute to 0, castable off zero lands), 225 adventure/prepare cards with both halves' costs summed, and 46 double-faced lands that enter tapped modelled as untapped. All three passed 391 tests. The fidelity guard refuses every faced card, so none reached the pool the search trusts; the `manalab sim` decklist path was not guarded.
+- **Retraction 1** (`e77ec90`, `reports/README.md`): four single-run colour tournaments, narrated as a trend, were smaller than the measured ±0.116 seed-to-seed noise floor. Kept and marked retracted, not deleted.
+- **Retraction 2** (`9b18d79`, on the `fix/engine-faithfulness-and-playable-corpus` branch): a deck's 5/12 win rate counted clock-capped draws as wins; re-measured, it was the worst of four candidates, not the best.
+- **Retraction 3** (`reports/README.md` on the same branch): every archived run was measured through an engine with three silent card-execution defects, so all of it was archived as not current.
 
 The goal is to test strategy theories by simulation. The design bet is that for
 deckbuilding search, **the objective function matters more than simulator
@@ -33,12 +53,6 @@ Current focus: **the search ladder and the rules engine.**
   human audit pending (`reports/audit_effects.md`).
 - **M3 — validation against 17Lands.** Not started.
 - **M4 — a Forge-backed evaluator.** Not started. Needs JDK 17+.
-
-## Setup
-
-```bash
-uv venv && uv pip install -e '.[dev]'
-```
 
 ## Use
 
