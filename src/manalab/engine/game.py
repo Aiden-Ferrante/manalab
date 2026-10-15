@@ -19,9 +19,13 @@ from typing import Sequence
 
 import manalab.engine.actions as A
 import manalab.engine.combat as combat
+import manalab.engine.commander as commander
 import manalab.engine.mana as mana
 import manalab.engine.resolve as resolve
+import manalab.engine.activation as activation
 import manalab.engine.sba as sba
+import manalab.engine.statics as statics
+import manalab.engine.triggers as triggers
 from manalab.engine.agents import Agent
 from manalab.engine.objects import GameObject
 from manalab.engine.state import GameState
@@ -83,7 +87,9 @@ class Game:
 
         winner = sba.winner(self.state)
         if winner is not None:
-            reason = self.state.players[1 - winner].loss_reason or "opponent lost"
+            losers = [p for p in self.state.players if p.index != winner]
+            reason = next((p.loss_reason for p in losers if p.loss_reason),
+                          "opponents lost")
         elif sba.game_over(self.state):
             reason = "all players lost"
         else:
@@ -103,6 +109,9 @@ class Game:
         state.turn += 1
         state.active_player = (state.turn - 1) % len(state.players)
         state.players[state.active_player].begin_turn()
+        for obj in state.battlefield():
+            obj.loyalty_used = False
+            obj.activations_this_turn = 0
         state.log.append(f"--- turn {state.turn} ({state.players[state.active_player].name})")
 
         for step in TURN:
@@ -111,6 +120,11 @@ class Game:
             self._turn_based_action(step)
             if step not in NO_PRIORITY and not self._combat_skipped(step):
                 self._priority(step)
+            # CR 500.4: mana empties at the end of every step and phase.
+            # Without this the pool is a bank account and a ritual cast on
+            # turn one pays for a spell on turn six.
+            for player in state.players:
+                player.mana_pool.clear()
 
     def _combat_skipped(self, step: Step) -> bool:
         """No attackers means no blockers and no combat damage (CR 508.1e)."""
@@ -120,12 +134,31 @@ class Game:
 
     # --- turn-based actions ---------------------------------------------
 
+    _STEP_EVENTS = {
+        Step.UPKEEP: triggers.EventKind.UPKEEP,
+        Step.END: triggers.EventKind.END_STEP,
+        Step.BEGIN_COMBAT: triggers.EventKind.BEGIN_COMBAT,
+    }
+
     def _turn_based_action(self, step: Step) -> None:
         state = self.state
         active = state.active_player
 
+        # "At the beginning of your upkeep" belongs to the active player, so
+        # the event carries them and matching scans their battlefield.
+        kind = self._STEP_EVENTS.get(step)
+        if kind is not None:
+            state.events.append(triggers.Event(kind, None, active))
+
         if step is Step.UNTAP:
             state.untap_all(active)
+            # Seedborn's line: permanents that untap during OTHER players'
+            # untap steps. Asked of the battlefield each untap step rather
+            # than cached, so the effect leaves when its source does.
+            for obj in state.battlefield():
+                if obj.controller != active and \
+                        statics.untaps_during_others(obj.card):
+                    state.untap_all(obj.controller)
         elif step is Step.DRAW:
             # The player on the play skips their first draw.
             if state.turn > 1:
@@ -145,6 +178,12 @@ class Game:
             for obj in state.battlefield():
                 obj.damage = 0
                 obj.deathtouched = False
+                # "Until end of turn" ends here (CR 514.2). Without this a pump
+                # would last the rest of the game, which is the lie the old
+                # counter-based modelling made permanent.
+                obj.power_mod = 0
+                obj.toughness_mod = 0
+                obj.granted.clear()
 
     # --- priority -------------------------------------------------------
 
@@ -155,9 +194,16 @@ class Game:
         passes = 0
 
         for _ in range(10_000):  # guards against an agent that never passes
+            # Before SBAs, because an anthem leaving can put a creature at
+            # zero toughness and that death is what SBAs are checking for.
+            statics.apply(state)
             sba.check(state)
             if sba.game_over(state):
                 return
+            # CR 117.5: triggers that have waited since the last priority go
+            # on the stack now, after state-based actions and before anyone
+            # acts — so they can be responded to, like any other object.
+            self._collect_triggers()
 
             stack = state.zone(Zone.STACK)
             if state.players[player].has_lost:
@@ -187,6 +233,56 @@ class Game:
                     return
         raise RuntimeError(f"priority did not terminate in {step}")
 
+    def _collect_triggers(self) -> None:
+        """Put every ability watching a recent event onto the stack."""
+        state = self.state
+        if not state.events:
+            return
+        pending, state.events = state.events, []
+
+        def fire(watcher, ability) -> None:
+            entry = state.create(watcher.card, owner=watcher.owner,
+                                 zone=Zone.STACK, controller=watcher.controller)
+            entry.trigger = ability
+            entry.source_id = watcher.id
+            state.log.append(f"trigger: {watcher.card.name} ({event.kind.value})")
+
+        for event in pending:
+            if event.kind in triggers.STEP_EVENTS:
+                # Happened to a player, so everything they control is watching.
+                for watcher in state.battlefield(event.controller):
+                    for watch, ability in triggers.watched_by(watcher.card):
+                        if watch.kind is event.kind and not watch.is_self:
+                            fire(watcher, ability)
+                continue
+
+            subject = state.objects.get(event.object_id)
+            if subject is None:
+                continue        # it moved again before triggers were collected
+
+            # The thing's own event — enters, dies, attacks — fires from the
+            # subject itself, wherever it now is (a dies trigger's source is
+            # already in the graveyard).
+            for ability in triggers.fired_by(subject.card, event.kind):
+                fire(subject, ability)
+
+            # The ChangesZone family: everything on the battlefield watching
+            # for events like this one. "A land you control enters" is checked
+            # against the subject's type and the DEAD-OR-ENTERING thing's
+            # controller (the event's), not the watcher's zone history.
+            for watcher in state.battlefield():
+                for watch, ability in triggers.watched_by(watcher.card):
+                    if watch.kind is not event.kind or watch.is_self \
+                            or not watch.subject:
+                        continue
+                    if watch.subject.capitalize() not in subject.card.type_line:
+                        continue
+                    if watch.yours and event.controller != watcher.controller:
+                        continue
+                    if watch.excludes_self and watcher.id == subject.id:
+                        continue
+                    fire(watcher, ability)
+
     def _apply(self, player: int, action: A.Action) -> None:
         state = self.state
         if isinstance(action, A.PlayLand):
@@ -195,13 +291,45 @@ class Game:
             state.players[player].lands_played += 1
         elif isinstance(action, A.CastSpell):
             obj = state.objects[action.object_id]
-            mana.pay(state, player, obj.card.cost)
+            cost = obj.card.cost
+            if obj.zone == Zone.COMMAND:
+                cost = commander.cost_from_command_zone(state, obj)
+                commander.note_cast(state, player)
+            mana.pay(state, player, cost)
             moved = state.move(obj, Zone.STACK, controller=player)
             # A card changing zones becomes a new object (CR 400.7), so the
             # targets have to be filed under the id it has *on the stack*.
             # Keying them by the hand id leaves every spell resolving untargeted.
             if action.targets:
                 self._targets[moved.id] = action.targets
+        elif isinstance(action, A.ActivateAbility):
+            obj = state.objects[action.object_id]
+            ability = obj.card.abilities[action.index]
+            cost = activation.parse_activation_cost(ability.cost)
+            mana.pay(state, player, cost.mana)
+            if cost.taps:
+                obj.tapped = True
+            if cost.loyalty is not None:
+                # One loyalty ability per walker per turn (CR 606.3); the
+                # enumerator already filtered, this is the payment itself.
+                obj.add_counters("loyalty", cost.loyalty)
+                obj.loyalty_used = True
+            # An activated ability goes on the stack as its own object, exactly
+            # as a trigger does — it is not the permanent, and the permanent
+            # stays put when it resolves.
+            entry = state.create(obj.card, owner=obj.owner, zone=Zone.STACK,
+                                 controller=player)
+            entry.trigger = ability
+            entry.source_id = obj.id
+            if cost.sacrifices_self:
+                # Paid after the ability is on the stack, so the ability
+                # resolves even though its source is dead — costs are paid on
+                # activation, and dies triggers fire like any other death.
+                state.move(obj, Zone.GRAVEYARD)
+            if action.targets:
+                self._targets[entry.id] = action.targets
+            obj.activations_this_turn += 1
+            state.log.append(f"activates {obj.card.name} #{action.index}")
         else:  # pragma: no cover - the priority loop offers nothing else
             raise NotImplementedError(action)
 
@@ -209,6 +337,15 @@ class Game:
         state = self.state
         stack = state.zone(Zone.STACK)
         top = stack[-1]
+
+        if top.trigger is not None:
+            # A triggered ability is its own object: it resolves, does its
+            # thing, and ceases to exist. The permanent that made it stays
+            # exactly where it is.
+            chosen = self._targets.pop(top.id, ())
+            resolve.apply_effects(state, top, top.trigger.effects, chosen, state.log)
+            state.cease(top)
+            return
 
         if top.card.is_permanent:
             state.move(top, Zone.BATTLEFIELD, controller=top.controller)
@@ -236,35 +373,48 @@ class Game:
         if not isinstance(choice, A.DeclareAttackers):
             raise ValueError("expected an attack declaration")
 
-        defender = (active + 1) % len(state.players)
+        defender = choice.defender
         for obj_id in choice.attackers:
             attacker = state.objects[obj_id]
             attacker.attacking = defender
+            state.events.append(
+                triggers.Event(triggers.EventKind.ATTACKS, attacker.id, active))
             if not attacker.has("Vigilance"):
                 attacker.tapped = True
         if choice.attackers:
             state.log.append(f"attacks: {[state.objects[i].card.name for i in choice.attackers]}")
 
     def _declare_blockers(self) -> None:
+        """Each attacked player declares blocks, with their own creatures.
+
+        The defender used to be "the next player round the table", which is only
+        the right answer at two. A player who is not being attacked does not
+        block, and a player who is blocks with what they control — so this is
+        driven by `attacking`, which already records who each attacker chose.
+        """
         state = self.state
-        attackers = [o.id for o in self._attackers()]
-        defender = (state.active_player + 1) % len(state.players)
+        by_defender: dict[int, list[int]] = {}
+        for obj in self._attackers():
+            by_defender.setdefault(obj.attacking, []).append(obj.id)
 
-        options, truncated = A.legal_blocks(state, defender, attackers)
-        if truncated:
-            self.unmodeled.setdefault(
-                "<block enumeration>",
-                "board too wide to enumerate every block; weakest blockers held back",
-            )
-        choice = self.agents[defender].act(state, defender, options)
-        if not isinstance(choice, A.DeclareBlockers):
-            raise ValueError("expected a block declaration")
+        for defender, attackers in sorted(by_defender.items()):
+            if state.players[defender].has_lost:
+                continue
+            options, truncated = A.legal_blocks(state, defender, attackers)
+            if truncated:
+                self.unmodeled.setdefault(
+                    "<block enumeration>",
+                    "board too wide to enumerate every block; weakest blockers held back",
+                )
+            choice = self.agents[defender].act(state, defender, options)
+            if not isinstance(choice, A.DeclareBlockers):
+                raise ValueError("expected a block declaration")
 
-        for blocker_id, attacker_id in choice.blocks:
-            blocker = state.objects[blocker_id]
-            attacker = state.objects[attacker_id]
-            blocker.blocking = attacker_id
-            attacker.blocked_by = attacker.blocked_by + (blocker_id,)
+            for blocker_id, attacker_id in choice.blocks:
+                blocker = state.objects[blocker_id]
+                attacker = state.objects[attacker_id]
+                blocker.blocking = attacker_id
+                attacker.blocked_by = attacker.blocked_by + (blocker_id,)
 
     def _combat_damage(self) -> None:
         """Combat damage, as a first-strike pass followed by a regular one.

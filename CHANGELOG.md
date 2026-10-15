@@ -11,6 +11,135 @@ rules engine actually plays. The notebook
 
 ### Added
 
+- **`engine/triggers.py` — triggered abilities, and the events they watch.**
+  Magic's commonest ability shape is "when something happens, do this" — 14,481
+  triggered abilities in the corpus against roughly 18,000 activated-or-spell
+  ones — and the engine had no notion of an event at all. A creature with an
+  enters-the-battlefield trigger resolved onto the battlefield and did nothing,
+  silently, forever.
+
+  `state.move` is the single choke point every zone change passes through, so
+  events are recorded there; `_collect_triggers` puts them on the stack after
+  state-based actions and before anyone acts (CR 117.5), so a trigger is a real
+  object that can be responded to. It resolves and ceases to exist — the
+  permanent stays put, which needed `state.cease`, because `move` would have put
+  a second copy of the source card in a graveyard.
+
+  Scope is the self-referential enters/dies family: ~3,992 + ~481 abilities,
+  over a quarter of every trigger printed. Everything else is **refused by name**
+  — upkeep, attack, combat-damage and the "another permanent you control" family
+  all make their card unfaithful rather than being ignored.
+
+  This also required `Card` to carry `abilities`, not just flattened `effects`.
+  The parser always knew a draw was a trigger; `Parsed.effects` flattened it away
+  and `Card` only carried the flattened view, so by the time the engine saw a
+  card the difference was gone. Same information-loss shape as `unparsed`.
+
+  **Pool effect: mono-green Commander 233 → 270 faithful cards.** Modest on
+  purpose — the spine is built, but most triggers' *effects* use verbs that do
+  not exist yet (`search_library`, `create_token`, `grant_ability`), so Craterhoof
+  Behemoth, Sakura-Tribe Elder and Eternal Witness are all still refused. The
+  verbs are what convert this, and they are next.
+
+- **`cards/formats.py` — constructed formats as first-class objects.** "The
+  format" used to be the string `"modern"` threaded through `mono_color`, with
+  the construction rules scattered as constants: 60 in `pool.partition`, a
+  four-copy `default_max` on `CandidatePool` whose docstring already said "1 in
+  singleton" with nothing supplying it, and a basic-land exemption written out
+  twice. Commander could not be expressed at all.
+
+  A `Format` owns legal pool, deck size, copy limit and starting life. Seven
+  presets: Standard, Pioneer, Modern, Legacy, Vintage, Pauper, Commander.
+  `mono_color(store, "U", fmt=COMMANDER)` now returns a singleton pool at 100
+  cards with basics uncapped, without the caller restating any of it. Strings
+  still work, so existing examples are unchanged.
+
+  **Restricted is now a copy limit rather than an exclusion.** `legal_in`
+  filtered on `= 'legal'`, so Vintage silently lost the 52 cards that define it —
+  Black Lotus, Ancestral Recall, Time Walk. The new `store.legality_in` keeps the
+  status, and a restricted card lands at one copy in the pool. It also reads
+  formats through `json_extract_string` rather than `legalities[?]`, which is the
+  same bind-time failure the loader predicate had.
+
+  `violations()` takes a legality map rather than a store, so checking a deck
+  costs no query and the tests need no corpus.
+
+### Fixed
+
+- **The parser stopped half-reading cards** (`cards/effects.py`). Two
+  mechanisms broke ADR 0005's contract that every clause is matched or recorded
+  unparsed. `_keyword_ability` swallowed 297 lines whole into an inert `param`
+  ("Scry X, …, then draw three cards" was recorded as scry, coverage 1.0);
+  a parameter is now bounded — a number, a mana cost, or plain words, never a
+  comma or period. And `Pattern.match` used `search`, so only a clause's first
+  match was seen and the unmatched remainder of a matched clause went nowhere;
+  patterns now report every occurrence with its span, and meaningful residue
+  lands in `unparsed`. That residue is what catches the class no coverage
+  metric can see: "instead", "for each", "target player", "you may".
+
+  **The pool shrank from 540 to 357 and that is the fix working**: 183 cards
+  were faithful-on-paper while being executed half-read — Life Goes On gained
+  12 life instead of 4, Congregate paid the caster, Ancestral Recall drew for
+  the wrong player. All refused now. Forge disagreements on faithful cards:
+  53/0/18/3 across the four classes → **0/0/0/0** over 30,931 scripts. The
+  road back up is `docs/parser-plan.md`, ranked and measured.
+
+
+- **Asymmetric pump was executed with the wrong arithmetic** (`engine/resolve.py`).
+  Pump was modelled as counters, which are symmetric by construction, so the two
+  halves were collapsed with `max(power, toughness)` and applied to both. Nameless
+  Inversion (+3/-3) resolved as a permanent +3/+3 buff instead of killing its
+  target; Chelonian Tackle (+0/+10) made a 12/12; every all-negative shrink was a
+  silent no-op; Agony Warp did nothing at all. **43 of 102 pump cards in the
+  searchable pool were wrong, and `fidelity` called every one of them faithful.**
+  `GameObject` now carries `power_mod`/`toughness_mod`, applied independently and
+  cleared in the cleanup step — so "until end of turn" now means what it says,
+  rather than lasting the rest of the game. Verified against Forge's hand-encoded
+  scripts: **0 pump amount mismatches across 30,931 cards.**
+
+- **`fidelity` could not see text the parser never read** (`engine/fidelity.py`,
+  `cards/model.py`, `cards/effects.py`). The non-permanent branch asked
+  `resolve.unsupported`, which inspects only the effects that *did* parse, and
+  `with_effects` discarded `Parsed.unparsed` — so unmatched clauses were invisible
+  to the one mechanism whose job is to notice them. Pact of Negation entered the
+  blue pool as a free, drawback-free counterspell because "pay {3}{U}{U}, or you
+  lose the game" was dropped. `Card` now carries `unparsed`, and a card with any
+  is refused. 90 of 819 faithful cards were affected.
+
+- **"you" was modelled as "any player"** (`engine/targets.py`). `legal_targets`
+  returned every player, so a card's own drawback became a free choice and the
+  pilot redirected it every time — Sarkhan's Rage aimed its self-damage at the
+  opponent. New `TargetKind.CONTROLLER` resolves to the caster alone.
+
+### Changed
+
+- **The corpus is now cards you can actually play**: 35,142 → **31,878**. The
+  store keeps a card only if some paper format lists it as `legal` or
+  `restricted`. That removes 2,377 rows legal nowhere — Un-sets, Mystery Booster
+  playtest cards, and 589 objects that are not cards at all (207 planes, 107
+  vanguards, 102 schemes, 87 emblems, 50 tokens, 20 hosts, 14 augments) — plus
+  887 digital-only Alchemy rebalances, which no paper deck can contain and which
+  collide on name with the cards they rebalance. Banned-but-real cards stay:
+  Black Lotus, Chaos Orb and Shahrazad all survive on another format. **Zero
+  modern-legal cards are dropped**, verified.
+
+  The rule had been written out three times — the `cards` table, the `faces` CTE,
+  and `verify_exact.py` — so it is now one `_PLAYABLE` predicate plus one
+  `is_playable()` for callers holding raw JSON, both driven by `PAPER_FORMATS`.
+  Formats are read via `json_extract_string` rather than as struct fields,
+  because a missing key is a *bind-time* error that kills the whole build.
+
+### Added
+
+- **`cards/forge.py` + `examples/forge_validation.py`** — the first external
+  check on what a card *means*, rather than on what it says. Forge publishes
+  ~33,700 cards as verb plus named parameters; we diff our `Effect(verb, params)`
+  against theirs. Covers 100% of modern-legal cards. It reproduces, mechanically
+  and at corpus scale, the defects a 43-card hand-written golden set found: 53
+  faithful cards carrying an effect we never encoded, 53 asymmetric pumps, 20
+  dropped target players, 3 flattened divided-damage spells. The scripts are
+  GPL-3.0 and stay in gitignored `data/` — read, never redistributed (ADR 0008).
+
 - **Combat keywords** (`engine/combat.py`) — flying and reach gating blocks,
   menace as a property of the whole assignment, trample spilling excess,
   deathtouch as one-point-is-lethal, first and double strike as two damage

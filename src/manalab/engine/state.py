@@ -20,6 +20,7 @@ from typing import Iterable, Iterator, Sequence
 from manalab.cards.model import Card
 from manalab.engine.objects import GameObject
 from manalab.engine.player import Player
+from manalab.engine.triggers import Event, EventKind
 from manalab.engine.zones import ORDERED, PRIVATE, Zone, owner_of_zone
 
 ZoneKey = tuple[Zone, int | None]
@@ -35,6 +36,13 @@ class GameState:
     next_id: int = 1
     rng: random.Random = field(default_factory=lambda: random.Random(0))
     log: list[str] = field(default_factory=list)
+    events: list[Event] = field(default_factory=list)
+    """Zone changes since the last time triggers were collected.
+
+    Recorded here because `move` is the single choke point every zone change
+    passes through. Anything that watched for entering or dying from the
+    caller's side would miss the ones that happen inside state-based actions,
+    which is most of the deaths in a real game."""
 
     # --- construction ---------------------------------------------------
 
@@ -59,8 +67,15 @@ class GameState:
                 state.create(card, owner=index, zone=Zone.LIBRARY)
         return state
 
-    def create(self, card: Card, *, owner: int, zone: Zone, controller: int | None = None) -> GameObject:
-        """Put a brand-new object into a zone. Used at setup and by token effects."""
+    def create(self, card: Card, *, owner: int, zone: Zone,
+               controller: int | None = None, quiet: bool = False) -> GameObject:
+        """Put a brand-new object into a zone. Used at setup and by token effects.
+
+        A permanent arriving on the battlefield triggers whatever watches for it,
+        however it arrived — a token entering triggers exactly as a cast creature
+        does. `quiet=True` opts out, for building a board position in a test or a
+        fixture where the setup itself is not meant to be a game event.
+        """
         obj = GameObject(
             id=self._mint(),
             card=card,
@@ -70,6 +85,16 @@ class GameState:
         )
         self.objects[obj.id] = obj
         self._zone_list(zone, obj).append(obj.id)
+        if zone == Zone.BATTLEFIELD:
+            # Same as arriving via `move`. Without it a token could attack
+            # and pay {T} the turn it was made, which is neither the rule nor
+            # what `move` does — and `create_token` goes through here.
+            obj.summoning_sick = True
+            obj.tapped = obj.card.enters_tapped
+            if "Planeswalker" in obj.card.type_line and obj.card.loyalty.isdigit():
+                obj.counters["loyalty"] = int(obj.card.loyalty)
+        if zone == Zone.BATTLEFIELD and not quiet:
+            self.events.append(Event(EventKind.ENTERS, obj.id, obj.controller))
         return obj
 
     def _mint(self) -> int:
@@ -125,6 +150,11 @@ class GameState:
         if old.id not in self.objects:
             raise KeyError(f"{old!r} is not in the game (already moved?)")
 
+        # CR 903.9, applied here rather than at call sites because most of a
+        # commander's trips to the graveyard happen inside state-based
+        # actions, which no caller sees.
+        to = old.destination_for(to)
+
         self._zone_list(old.zone, old).remove(old.id)
         del self.objects[old.id]
 
@@ -135,13 +165,35 @@ class GameState:
         if to == Zone.BATTLEFIELD:
             new.summoning_sick = True
             new.tapped = new.card.enters_tapped
+            if "Planeswalker" in new.card.type_line and new.card.loyalty.isdigit():
+                # Printed loyalty arrives as counters (CR 306.5b). Without this
+                # a planeswalker died to the loyalty SBA the moment it resolved.
+                new.counters["loyalty"] = int(new.card.loyalty)
 
         self.objects[new.id] = new
         destination = self._zone_list(to, new)
         destination.insert(0, new.id) if to_top else destination.append(new.id)
 
         self.log.append(f"{old.card.name}: {old.zone} -> {to}")
+
+        if to == Zone.BATTLEFIELD:
+            self.events.append(Event(EventKind.ENTERS, new.id, new.controller))
+        elif old.zone == Zone.BATTLEFIELD and to == Zone.GRAVEYARD:
+            # The dying object is gone; the trigger belongs to the card, and
+            # `new` is where it now sits, so that is what the source reads from.
+            self.events.append(Event(EventKind.DIES, new.id, old.controller))
         return new
+
+    def cease(self, obj: GameObject) -> None:
+        """Remove an object from the game without sending it anywhere.
+
+        For a resolved triggered ability. It is not a card, so it has no owner's
+        graveyard to go to — `move` would put a second copy of the source card
+        into one, which is how a one-card ETB trigger would quietly become two
+        cards in the yard.
+        """
+        self._zone_list(obj.zone, obj).remove(obj.id)
+        del self.objects[obj.id]
 
     # --- common operations ----------------------------------------------
 

@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
+import manalab.engine.activation as activation
+import manalab.engine.commander as commander
 import manalab.engine.combat as combat
 import manalab.engine.resolve as resolve
 import manalab.engine.targets as targets
@@ -57,14 +59,40 @@ class CastSpell(Action):
 
 
 @dataclass(frozen=True)
+class ActivateAbility(Action):
+    """Activate an ability of a permanent you control.
+
+    `index` is into `card.abilities`, so the ability is identified by where it is
+    printed rather than by its text — two abilities on one card can read the same
+    and still be different abilities.
+    """
+
+    object_id: int = 0
+    index: int = 0
+    targets: tuple["T.Target", ...] = ()
+
+    def describe(self, state: GameState) -> str:
+        obj = state.objects.get(self.object_id)
+        name = obj.card.name if obj else f"<gone {self.object_id}>"
+        return f"activate {name} #{self.index}"
+
+
+@dataclass(frozen=True)
 class DeclareAttackers(Action):
     attackers: tuple[int, ...] = ()
+    defender: int | None = None
+    """Which player is being attacked. `None` only for an empty declaration.
+
+    Two-player Magic never needed this — there was one opponent and the engine
+    assumed them. With three or more it is a real choice, and the one that
+    decides most Commander games.
+    """
 
     def describe(self, state: GameState) -> str:
         if not self.attackers:
             return "attack with nothing"
         names = ", ".join(state.objects[i].card.name for i in self.attackers)
-        return f"attack with {names}"
+        return f"attack P{self.defender} with {names}"
 
 
 @dataclass(frozen=True)
@@ -90,6 +118,38 @@ def legal(state: GameState, player: int, step: Step, *, stack_empty: bool) -> li
 
     if sorcery_speed and state.players[player].can_play_land():
         actions.extend(PlayLand(obj.id) for obj in hand if obj.is_land)
+
+    # Activated abilities of permanents you control. Instant speed, like any
+    # activated ability without a timing restriction — the restriction itself is
+    # not modelled, so a sorcery-speed-only ability is currently over-permitted.
+    for obj in state.battlefield(player):
+        for index, ability, cost in activation.activatable(obj.card):
+            if cost.taps and not obj.can_tap:
+                continue
+            if cost.loyalty is not None:
+                # Sorcery speed, once per walker per turn, and you cannot
+                # remove counters the walker does not have (CR 606.5).
+                if not sorcery_speed or obj.loyalty_used:
+                    continue
+                if cost.loyalty < 0 and obj.counters.get("loyalty", 0) < -cost.loyalty:
+                    continue
+            if not can_pay(state, player, cost.mana):
+                continue
+            actions.extend(_activations(state, player, obj, index, ability))
+
+    # A commander casts from the command zone (CR 903.6) at its taxed cost.
+    # The tax machinery existed before anything could call it — the command
+    # zone, the {2}-per-cast bookkeeping and the 903.9 replacement all worked,
+    # and the commander itself was never offered as a cast.
+    for obj in state.zone(Zone.COMMAND):
+        if obj.owner != player or not obj.is_commander:
+            continue
+        instant_speed = "Instant" in obj.types or obj.has("Flash")
+        if not (instant_speed or sorcery_speed):
+            continue
+        if not can_pay(state, player, commander.cost_from_command_zone(state, obj)):
+            continue
+        actions.extend(_castings(state, player, obj))
 
     for obj in hand:
         if obj.is_land:
@@ -163,6 +223,25 @@ thirty-two thousand options nobody will read.
 """
 
 
+def _activations(state: GameState, player: int, obj, index: int,
+                 ability) -> list[ActivateAbility]:
+    """One action per legal set of targets, mirroring how casting enumerates."""
+    specs = [targets.parse(e.get("target")) for e in ability.effects]
+    if any(spec is None for spec in specs):
+        return []                       # refused upstream; belt and braces
+    needed = [spec for spec in specs if spec.needs_target]
+    if not needed:
+        return [ActivateAbility(obj.id, index)]
+
+    choices: list[tuple] = [()]
+    for spec in needed:
+        legal_for = targets.legal_targets(state, player, spec)
+        if not legal_for:
+            return []
+        choices = [chosen + (one,) for chosen in choices for one in legal_for]
+    return [ActivateAbility(obj.id, index, tuple(c)) for c in choices]
+
+
 def legal_attacks(state: GameState, player: int) -> list[DeclareAttackers]:
     """Attack declarations available to the active player.
 
@@ -172,7 +251,9 @@ def legal_attacks(state: GameState, player: int) -> list[DeclareAttackers]:
     possible.
     """
     able = [obj for obj in state.creatures(player) if obj.can_attack]
-    if not able:
+    opponents = [p.index for p in state.players
+                 if p.index != player and not p.has_lost]
+    if not able or not opponents:
         return [DeclareAttackers(())]
 
     # Strongest first, so that a truncated enumeration keeps the choices that
@@ -183,12 +264,19 @@ def legal_attacks(state: GameState, player: int) -> list[DeclareAttackers]:
     free = [o.id for o in able[:width]]
     forced = tuple(o.id for o in able[width:])
 
+    # Each subset is offered against each opponent, rather than every way of
+    # splitting the team across several. That is N options per subset instead of
+    # N^k, and it is a real restriction: an attack cannot be divided between two
+    # opponents. Documented rather than hidden — `blocks_truncated` sets the
+    # precedent that a narrowed choice is reported, never silently taken.
     subsets: list[DeclareAttackers] = []
     for mask in range(1 << len(free)):
         chosen = tuple(free[i] for i in range(len(free)) if mask & (1 << i))
-        subsets.append(DeclareAttackers(chosen + forced if chosen else chosen))
-    if forced:
-        subsets.append(DeclareAttackers(()))
+        if not chosen:
+            continue
+        for defender in opponents:
+            subsets.append(DeclareAttackers(chosen + forced, defender))
+    subsets.append(DeclareAttackers(()))
     return subsets
 
 

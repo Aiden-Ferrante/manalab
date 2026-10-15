@@ -14,7 +14,31 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Mapping
 
-from manalab.cards.model import Card
+from manalab.cards.model import Ability, Card
+
+COMBAT_KEYWORDS = frozenset({
+    "flying", "reach", "menace", "trample", "deathtouch", "first strike",
+    "double strike", "lifelink", "vigilance", "haste", "defender",
+})
+"""Keywords `engine.combat` and this module genuinely implement.
+
+Lives here rather than in `fidelity` because `has()` is what answers for them,
+and because `resolve` needs the same set to decide what it may grant — and
+`fidelity` imports `resolve`, so the constant cannot live downstream of it
+without a cycle or a second copy that drifts.
+"""
+
+TIMING_KEYWORDS = frozenset({"flash"})
+"""Keywords implemented outside combat. Flash is read by `actions.legal`, which
+offers a creature at instant speed when it has one.
+
+Kept apart from COMBAT_KEYWORDS rather than folded in, because a test asserts
+every entry in that set is read by `combat` or `objects` — and flash is read by
+neither. Folding it in would either break that test or force it to stop
+checking, and it is the test that keeps the set honest."""
+
+IMPLEMENTED_KEYWORDS = COMBAT_KEYWORDS | TIMING_KEYWORDS
+"""Everything the engine actually does something with. What `fidelity` asks."""
 from manalab.engine.zones import Zone
 
 
@@ -38,12 +62,63 @@ class GameObject:
     would make a 1/1's hit indistinguishable from a real ten points when
     something later heals or pumps toughness."""
     counters: dict[str, int] = field(default_factory=dict)
+    power_mod: int = 0
+    toughness_mod: int = 0
+    """Power and toughness granted until end of turn, kept apart from counters.
+
+    Counters are symmetric by construction — a `+1/+1` counter moves both halves
+    by the same amount — so modelling every pump as counters cannot express
+    +3/-3, and collapsing it to one number turned Nameless Inversion, a removal
+    spell, into a permanent +3/+3 buff. It also made a -5/-0 shrink a no-op.
+
+    These are cleared in the cleanup step, which is what makes "until end of
+    turn" mean what it says rather than lasting the rest of the game."""
     summoning_sick: bool = False
     """Set when a permanent enters the battlefield, cleared during its
     controller's untap step. A creature with this cannot attack or pay {T},
     unless it has haste."""
     attached_to: int | None = None
     face_down: bool = False
+    granted: set[str] = field(default_factory=set)
+    """Keywords granted until end of turn, cleared in cleanup beside the P/T
+    modifiers. Kept apart from the card's printed keywords so nothing has to
+    mutate a frozen `Card` that other objects share."""
+    static_power: int = 0
+    static_toughness: int = 0
+    """Contribution from static abilities in play, recomputed by `statics.apply`.
+
+    Kept apart from `power_mod`, which is an until-end-of-turn effect that gets
+    cleared in cleanup. These are never cleared on a timer — they are rebuilt
+    from the battlefield, so an anthem leaving stops applying without anything
+    having to remember that it did."""
+
+    source_id: int | None = None
+    """For a stack entry made by a trigger or activation: the battlefield object
+    it came from. "Sacrifice it" has to know which permanent *it* is — the stack
+    entry is a different object (CR 113.7a), so without this link a
+    self-sacrifice has nothing to point at."""
+    activations_this_turn: int = 0
+    """How often this permanent's abilities have been activated this turn.
+    The RULES allow repeats; the crude pilot declines them (see CurveAgent) —
+    two `{T}: untap target creature` creatures aimed at each other are an
+    infinite loop the first real campaign found in its second seed."""
+    loyalty_used: bool = False
+    """A loyalty ability has been activated this turn (CR 606.3 allows one per
+    planeswalker per turn). Cleared at the start of every turn — the limit is
+    per turn, not per its controller's turn."""
+
+    is_commander: bool = False
+    """Set for the object its owner named as their commander. Survives zone
+    changes via `fresh_copy`, unlike everything else on this object — a
+    commander that stopped being one on its way to the graveyard would never
+    come back to the command zone."""
+    trigger: Ability | None = None
+    """Set when this stack entry is a triggered ability rather than a card.
+
+    A triggered ability on the stack is its own object (CR 113.7a): it is not
+    the permanent, and when it resolves the permanent stays where it is. It
+    carries the source card so the effect can name it, and this field so
+    resolution knows not to put a creature onto the battlefield twice."""
 
     attacking: int | None = None
     """Player being attacked, while this creature is an attacker."""
@@ -77,12 +152,16 @@ class GameObject:
     @property
     def power(self) -> int:
         base = self.card.base_power
-        return (base or 0) + self.counters.get("+1/+1", 0) - self.counters.get("-1/-1", 0)
+        return ((base or 0) + self.counters.get("+1/+1", 0)
+                - self.counters.get("-1/-1", 0) + self.power_mod
+                + self.static_power)
 
     @property
     def toughness(self) -> int:
         base = self.card.base_toughness
-        return (base or 0) + self.counters.get("+1/+1", 0) - self.counters.get("-1/-1", 0)
+        return ((base or 0) + self.counters.get("+1/+1", 0)
+                - self.counters.get("-1/-1", 0) + self.toughness_mod
+                + self.static_toughness)
 
     @property
     def lethal_damage(self) -> bool:
@@ -94,8 +173,31 @@ class GameObject:
             return True
         return self.toughness <= 0 or self.damage >= self.toughness
 
+    def destination_for(self, to: "Zone") -> "Zone":
+        """Where this object actually goes — CR 903.9 for a commander.
+
+        A commander headed for a graveyard or exile goes to the command zone
+        instead. The rules make it a choice its owner may decline; taking it
+        always is the approximation, and declining is only ever right for a deck
+        built to recur its commander out of a graveyard, which needs abilities
+        this engine does not have.
+
+        Lives on the object rather than in `commander` because `state.move` has
+        to ask it, and `commander` reads state — putting it there is a cycle.
+        """
+        if self.is_commander and to in (Zone.GRAVEYARD, Zone.EXILE):
+            return Zone.COMMAND
+        return to
+
     def has(self, keyword: str) -> bool:
-        return self.card.has(keyword)
+        """Printed on the card, or granted to it this turn.
+
+        Read through here rather than off `card` so a granted keyword is
+        indistinguishable from a printed one everywhere combat asks — which is
+        the whole point, since "gains trample until end of turn" has to make the
+        same trample the printed one does.
+        """
+        return self.card.has(keyword) or keyword.lower() in self.granted
 
     @property
     def can_tap(self) -> bool:
@@ -137,6 +239,7 @@ class GameObject:
             owner=self.owner,
             controller=controller,
             zone=zone,
+            is_commander=self.is_commander,
         )
 
     @property
@@ -149,7 +252,8 @@ class GameObject:
         self.blocked_by = ()
 
     def clone(self) -> "GameObject":
-        return replace(self, counters=dict(self.counters))
+        return replace(self, counters=dict(self.counters),
+                       granted=set(self.granted))
 
     def __repr__(self) -> str:
         marks = []

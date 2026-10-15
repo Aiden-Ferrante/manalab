@@ -70,8 +70,11 @@ def test_understood_phrases_parse() -> None:
 def test_unknown_phrases_are_refused_not_guessed() -> None:
     """The whole safety property. A guess here makes illegal plays look legal."""
     for phrase in ["target nonblack creature", "target creature an opponent controls",
-                   "target attacking or blocking creature", "creatures you control"]:
+                   "target attacking or blocking creature"]:
         assert T.parse(phrase) is None, f"{phrase!r} was silently accepted"
+    # "creatures you control" moved out of this list the day mass pump gained a
+    # duration model: it is a SCOPE now, understood and never a target.
+    assert T.parse("creatures you control").is_mass
 
 
 def test_mass_scopes_are_understood_but_are_not_targets() -> None:
@@ -178,9 +181,9 @@ def test_a_pumped_creature_survives_what_would_have_killed_it(store) -> None:
 
 
 def test_an_unimplemented_verb_is_refused_by_name(store) -> None:
-    reasons = resolve.unsupported(store.by_name("Raise the Alarm"))
+    reasons = resolve.unsupported(store.by_name("Heroic Intervention"))
     assert reasons
-    assert any("create_token" in r for r in reasons)
+    assert any("cannot grant" in r for r in reasons), reasons
 
 
 def test_a_conditional_counter_is_refused(store) -> None:
@@ -198,7 +201,7 @@ def test_a_card_with_an_unreadable_target_is_refused_whole(store) -> None:
 
 
 def test_a_refused_card_has_no_plan(store) -> None:
-    assert resolve.plan_for(store.by_name("Raise the Alarm")) is None
+    assert resolve.plan_for(store.by_name("Heroic Intervention")) is None
 
 
 # --- casting through the action layer -----------------------------------
@@ -226,10 +229,10 @@ def test_a_targeted_spell_with_no_legal_target_cannot_be_cast(store) -> None:
 
 def test_an_unresolvable_spell_is_still_castable_and_reported(store) -> None:
     """It does nothing, exactly as before — but says so rather than vanishing."""
-    unresolvable = store.by_name("Raise the Alarm")
-    plains = Card("p", "Plains", parse_cost(None), "Basic Land — Plains",
-                  produces=frozenset("W"), taps_for_mana=True)
-    state = board(hand=[unresolvable], battlefield=[plains] * 3)
+    unresolvable = store.by_name("Heroic Intervention")   # {1}{G}
+    forest = Card("f2", "Forest", parse_cost(None), "Basic Land — Forest",
+                  produces=frozenset("G"), taps_for_mana=True)
+    state = board(hand=[unresolvable], battlefield=[forest] * 3)
     options = A.legal(state, 0, Step.PRECOMBAT_MAIN, stack_empty=True)
     casts = [o for o in options if isinstance(o, A.CastSpell)]
     assert len(casts) == 1
@@ -391,9 +394,323 @@ def test_a_sweeper_is_castable_with_no_creatures_out(store) -> None:
     assert casts[0].targets == (), "a sweeper must not enumerate targets"
 
 
-def test_a_mass_pump_is_refused(store) -> None:
-    """Pump-as-counters is a bounded lie for one creature and a different card
-    entirely when applied permanently to every creature on the board."""
-    reasons = resolve.unsupported(store.by_name("Languish"))
-    assert reasons
-    assert any("duration model" in r for r in reasons)
+def test_a_mass_pump_works_now_that_pumps_expire(store) -> None:
+    """This asserted the opposite while a pump was permanent counters — a
+    whole-board permanent anthem was a different card. The until-end-of-turn
+    modifiers removed that reason, so Overrun means what it says."""
+    from manalab.engine import fidelity
+
+    overrun = store.by_name("Overrun")
+    assert fidelity.assess(overrun).faithful, fidelity.assess(overrun).reasons
+
+    state = GameState.new([[], []])
+    mine = state.create(store.by_name("Grizzly Bears"), owner=0,
+                        zone=Zone.BATTLEFIELD, quiet=True)
+    theirs = state.create(store.by_name("Grizzly Bears"), owner=1,
+                          zone=Zone.BATTLEFIELD, quiet=True)
+    spell = state.create(overrun, owner=0, zone=Zone.STACK)
+    resolve.apply(state, spell, [], state.log)
+
+    assert (mine.power, mine.toughness) == (5, 5)
+    assert mine.has("Trample"), "the mass grant missed"
+    assert (theirs.power, theirs.toughness) == (2, 2), "scope leaked to the opponent"
+
+
+# --- counters and shuffling ---------------------------------------------
+
+
+def _counter_spell(kind: str = "+1/+1", amount: int = 2) -> Card:
+    return Card("pc", "Counter Giver", parse_cost("{1}{G}"), "Instant",
+                oracle_text=f"Put {amount} {kind} counters on target creature.",
+                effects=(Effect("put_counters", (("amount", amount), ("kind", kind),
+                                                 ("target", "target creature"))),))
+
+
+def test_counters_change_power_and_toughness() -> None:
+    state = GameState.new([[], []])
+    bear = state.create(
+        Card("b", "Bear", parse_cost("{1}{G}"), "Creature — Bear",
+             power="2", toughness="2"),
+        owner=0, zone=Zone.BATTLEFIELD, quiet=True)
+    spell = state.create(_counter_spell(), owner=0, zone=Zone.STACK)
+
+    resolve.apply(state, spell, [T.Target(object_id=bear.id)], state.log)
+
+    assert (bear.power, bear.toughness) == (4, 4)
+
+
+def test_counters_are_permanent_unlike_a_pump() -> None:
+    """The difference between the two verbs. A pump is cleared in cleanup; a
+    counter is not, and modelling either as the other loses a real distinction."""
+    state = GameState.new([[], []])
+    bear = state.create(
+        Card("b", "Bear", parse_cost("{1}{G}"), "Creature — Bear",
+             power="2", toughness="2"),
+        owner=0, zone=Zone.BATTLEFIELD, quiet=True)
+    spell = state.create(_counter_spell(), owner=0, zone=Zone.STACK)
+    resolve.apply(state, spell, [T.Target(object_id=bear.id)], state.log)
+
+    bear.power_mod = bear.toughness_mod = 0      # what cleanup does
+    assert (bear.power, bear.toughness) == (4, 4), "counters were cleared like a pump"
+
+
+def test_minus_counters_can_kill() -> None:
+    state = GameState.new([[], []])
+    bear = state.create(
+        Card("b", "Bear", parse_cost("{1}{G}"), "Creature — Bear",
+             power="2", toughness="2"),
+        owner=0, zone=Zone.BATTLEFIELD, quiet=True)
+    spell = state.create(_counter_spell("-1/-1", 2), owner=0, zone=Zone.STACK)
+    resolve.apply(state, spell, [T.Target(object_id=bear.id)], state.log)
+    sba.check(state)
+
+    assert state.battlefield(0) == [], "a 2/2 with two -1/-1 counters should die"
+
+
+def test_a_counter_kind_nothing_reads_is_refused() -> None:
+    """`add_counters` stores any string, so a charge counter would be accepted
+    and then quietly do nothing. Refusing is the honest outcome."""
+    card = _counter_spell("charge", 1)
+    reasons = resolve.unsupported(card)
+    assert any("counter kind not modelled" in r for r in reasons), reasons
+
+
+def test_shuffle_reorders_the_library() -> None:
+    cards = [Card(str(i), f"C{i}", parse_cost("{G}"), "Creature — Elf",
+                  power="1", toughness="1") for i in range(30)]
+    state = GameState.new([cards, []], seed=4)
+    before = [o.card.name for o in state.library(0)]
+
+    spell = state.create(
+        Card("s", "Shuffler", parse_cost("{G}"), "Instant",
+             oracle_text="Shuffle.", effects=(Effect("shuffle"),)),
+        owner=0, zone=Zone.STACK)
+    resolve.apply(state, spell, [], state.log)
+
+    assert [o.card.name for o in state.library(0)] != before
+
+
+# --- searching the library ----------------------------------------------
+
+
+def _rampant_growth() -> Card:
+    return Card("rg", "Rampant Growth", parse_cost("{1}{G}"), "Sorcery",
+                oracle_text="Search your library for a basic land card, put it onto "
+                            "the battlefield tapped, then shuffle.",
+                effects=(Effect("search_library", (
+                    ("what", "a basic land card, put it onto the battlefield tapped, "
+                             "then shuffle"),)),))
+
+
+def _library() -> list[Card]:
+    forest = Card("f", "Forest", parse_cost(None), "Basic Land — Forest",
+                  produces=frozenset("G"), taps_for_mana=True, oracle_text="")
+    bear = Card("b", "Bear", parse_cost("{1}{G}"), "Creature — Bear",
+                power="2", toughness="2")
+    return [bear] * 5 + [forest] * 5
+
+
+def test_a_basic_land_fetch_puts_a_land_onto_the_battlefield_tapped() -> None:
+    state = GameState.new([_library(), []], seed=1)
+    spell = state.create(_rampant_growth(), owner=0, zone=Zone.STACK)
+
+    resolve.apply(state, spell, [], state.log)
+
+    lands = [o for o in state.battlefield(0) if o.card.is_land]
+    assert len(lands) == 1, "the fetch found nothing"
+    assert lands[0].card.name == "Forest"
+    assert lands[0].tapped, "the card says tapped"
+
+
+def test_the_fetched_land_leaves_the_library() -> None:
+    state = GameState.new([_library(), []], seed=1)
+    before = len(state.library(0))
+    spell = state.create(_rampant_growth(), owner=0, zone=Zone.STACK)
+    resolve.apply(state, spell, [], state.log)
+
+    assert len(state.library(0)) == before - 1
+
+
+def test_a_fetch_that_finds_nothing_is_legal() -> None:
+    """Failing to find is a legal outcome, and it still shuffles."""
+    bear = Card("b", "Bear", parse_cost("{1}{G}"), "Creature — Bear",
+                power="2", toughness="2")
+    state = GameState.new([[bear] * 6, []], seed=1)
+    spell = state.create(_rampant_growth(), owner=0, zone=Zone.STACK)
+
+    resolve.apply(state, spell, [], state.log)
+
+    assert [o for o in state.battlefield(0) if o.card.is_land] == []
+
+
+def test_a_search_clause_the_engine_cannot_read_is_refused() -> None:
+    """461 distinct shapes exist and most mean something specific. Guessing at
+    one would fetch the wrong card with confidence."""
+    card = Card("x", "Weird Tutor", parse_cost("{G}"), "Sorcery",
+                effects=(Effect("search_library", (
+                    ("what", "a creature card with mana value X or less, put it onto "
+                             "the battlefield, then shuffle"),)),))
+    reasons = resolve.unsupported(card)
+    assert any("library search not understood" in r for r in reasons), reasons
+
+
+def test_a_real_ramp_spell_from_the_store_is_faithful(store) -> None:
+    from manalab.engine import fidelity
+
+    rampant = store.by_name("Rampant Growth")
+    assert fidelity.assess(rampant).faithful, fidelity.assess(rampant).reasons
+
+
+def test_a_granted_keyword_is_indistinguishable_from_a_printed_one() -> None:
+    """"Gains trample until end of turn" has to make the same trample the
+    printed keyword does, or combat would have to ask twice."""
+    state = GameState.new([[], []])
+    bear = state.create(
+        Card("b", "Bear", parse_cost("{1}{G}"), "Creature — Bear",
+             power="2", toughness="2"),
+        owner=0, zone=Zone.BATTLEFIELD, quiet=True)
+    assert not bear.has("Trample")
+
+    spell = state.create(
+        Card("g", "Grant", parse_cost("{G}"), "Instant",
+             effects=(Effect("grant_ability", (("ability", "trample"),
+                                               ("target", "target creature"))),)),
+        owner=0, zone=Zone.STACK)
+    resolve.apply(state, spell, [T.Target(object_id=bear.id)], state.log)
+
+    assert bear.has("Trample")
+
+
+def test_granting_a_keyword_the_engine_does_not_implement_is_refused() -> None:
+    card = Card("h", "Shroudy", parse_cost("{G}"), "Instant",
+                effects=(Effect("grant_ability", (("ability", "hexproof"),
+                                                  ("target", "target creature"))),))
+    assert any("cannot grant" in r for r in resolve.unsupported(card))
+
+
+# --- floating mana -------------------------------------------------------
+
+
+def _ritual(mana: str = "{B}{B}{B}") -> Card:
+    return Card("dr", "Dark Ritual", parse_cost("{B}"), "Instant",
+                oracle_text=f"Add {mana}.",
+                effects=(Effect("add_mana", (("mana", mana),)),))
+
+
+def test_a_ritual_puts_mana_in_the_pool() -> None:
+    from manalab.engine import mana
+
+    state = GameState.new([[], []])
+    spell = state.create(_ritual(), owner=0, zone=Zone.STACK)
+    resolve.apply(state, spell, [], state.log)
+
+    assert state.players[0].mana_pool == {"B": 3}
+
+
+def test_floating_mana_pays_for_a_spell_without_tapping() -> None:
+    """The point of a pool: mana that already exists is spent before anything
+    is tapped, which is what makes a ritual worth casting."""
+    from manalab.engine import mana
+
+    state = GameState.new([[], []])
+    state.players[0].mana_pool = {"B": 3}
+    payment = mana.pay(state, 0, parse_cost("{2}{B}"))
+
+    assert payment.tapped == (), "it tapped a permanent despite floating mana"
+    assert state.players[0].mana_pool == {}
+
+
+def test_coloured_pips_are_paid_before_generic() -> None:
+    """Spending the one green on a generic pip while a {G} is still unpaid turns
+    a payable cost unpayable."""
+    from manalab.engine import mana
+
+    spent, remaining = mana.spend_pool({"G": 1, "C": 1}, parse_cost("{1}{G}"))
+    assert spent["G"] == 1
+    assert remaining.generic == 0 and remaining.symbols == ()
+
+
+def test_the_pool_empties_between_steps() -> None:
+    """CR 500.4. Without it a ritual on turn one pays for a spell on turn six."""
+    from manalab.engine.agents import PassingAgent
+
+    forest = Card("f3", "Forest", parse_cost(None), "Basic Land — Forest",
+                  produces=frozenset("G"), taps_for_mana=True)
+    state = GameState.new([[forest] * 60, [forest] * 60])
+    game = Game(state, [PassingAgent(), PassingAgent()], max_turns=2)
+    state.players[0].mana_pool = {"G": 5}
+
+    game.setup()
+    game.run()
+
+    assert state.players[0].mana_pool == {}
+
+
+def test_mana_the_engine_cannot_read_is_refused() -> None:
+    card = Card("x", "Any Color", parse_cost("{G}"), "Instant",
+                effects=(Effect("add_mana", (("mana", "one mana of any color"),)),))
+    assert any("mana not understood" in r for r in resolve.unsupported(card))
+
+
+def test_an_ability_word_is_a_no_op_because_the_rules_say_so(store) -> None:
+    """CR 207.2c. Landfall is an italic label, not a mechanic.
+
+    The check that matters is the second one: the ability the word labels is
+    parsed separately and keeps its own trigger, so treating the word as nothing
+    drops nothing.
+    """
+    from manalab.engine import resolve as R
+
+    card = store.by_name("Grazing Gladehart")
+    (ability,) = [a for a in card.abilities if a.kind == "triggered"]
+    assert [e.verb for e in ability.effects] == ["ability_word", "gain_life"]
+    assert ability.trigger, "the word swallowed the trigger it labels"
+    assert "ability_word" not in " ".join(R.unsupported(card))
+
+
+def test_craterhoof_behemoth_does_the_whole_thing(store) -> None:
+    """The finisher, end to end from the real store: ETB trigger, X counted
+    from the board at resolution, the team pumped and granted trample, the
+    hoof itself included — and none of it survives cleanup."""
+    from manalab.engine import fidelity
+
+    hoof = store.by_name("Craterhoof Behemoth")
+    assert fidelity.assess(hoof).faithful, fidelity.assess(hoof).reasons
+
+    state = GameState.new([[], []])
+    bears = [state.create(store.by_name("Grizzly Bears"), owner=0,
+                          zone=Zone.BATTLEFIELD, quiet=True) for _ in range(3)]
+    entered = state.create(hoof, owner=0, zone=Zone.BATTLEFIELD, quiet=True)
+
+    trigger = next(a for a in hoof.abilities if a.kind == "triggered")
+    entry = state.create(hoof, owner=0, zone=Zone.STACK, controller=0)
+    entry.trigger = trigger
+    entry.source_id = entered.id
+    resolve.apply_effects(state, entry, trigger.effects, (), state.log)
+
+    # X = 4 creatures on the board when it resolved.
+    assert (bears[0].power, bears[0].toughness) == (6, 6)
+    assert bears[0].has("Trample")
+    assert (entered.power, entered.toughness) == (9, 9), "the hoof pumps itself"
+
+
+def test_eternal_witness_returns_the_biggest_card(store) -> None:
+    """Engine-chosen greedily — the declared rule — and from the real store."""
+    from manalab.engine import fidelity
+
+    witness = store.by_name("Eternal Witness")
+    assert fidelity.assess(witness).faithful, fidelity.assess(witness).reasons
+
+    state = GameState.new([[], []])
+    for name in ("Grizzly Bears", "Craterhoof Behemoth"):
+        obj = state.create(store.by_name(name), owner=0, zone=Zone.BATTLEFIELD,
+                           quiet=True)
+        state.move(obj, Zone.GRAVEYARD)
+
+    trigger = next(a for a in witness.abilities if a.kind == "triggered")
+    entry = state.create(witness, owner=0, zone=Zone.STACK, controller=0)
+    entry.trigger = trigger
+    resolve.apply_effects(state, entry, trigger.effects, (), state.log)
+
+    assert [o.card.name for o in state.hand(0)] == ["Craterhoof Behemoth"], \
+        "greedy means the 8-drop, not the bear"

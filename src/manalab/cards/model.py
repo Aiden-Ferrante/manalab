@@ -31,6 +31,39 @@ class Effect:
 
 
 @dataclass(frozen=True)
+class Ability:
+    """One ability, with the *shape* that tells you when it happens.
+
+    An `Effect` says what a card does. It cannot say when, and "draw a card" and
+    "when this creature enters, draw a card" are different cards. The parser has
+    always known the difference — it records `kind` and the trigger condition —
+    but `Parsed.effects` flattened every ability into one tuple and `Card` only
+    ever carried that tuple, so by the time the engine saw a card the difference
+    was gone. Everything downstream then had to assume "spell", which is why
+    permanents resolved to the battlefield doing nothing at all.
+
+    `kind` is one of `spell`, `activated`, `triggered`, `static`, `keyword`.
+    """
+
+    kind: str
+    text: str = ""
+    effects: tuple[Effect, ...] = ()
+    unparsed: tuple[str, ...] = ()
+    cost: str = ""
+    trigger: str = ""
+    """The condition, as printed: "this creature enters", "CARDNAME dies"."""
+    matched_clauses: int = 0
+    """Clauses that produced at least one effect. Kept apart from
+    `len(effects)` because one clause can match several patterns, and counting
+    effects put 5,223 phantom matches into the coverage numerator AND
+    denominator — the more verbs a clause carried, the better it looked."""
+
+    @property
+    def fully_parsed(self) -> bool:
+        return not self.unparsed
+
+
+@dataclass(frozen=True)
 class Face:
     """One printed side. Most cards have exactly one.
 
@@ -94,6 +127,22 @@ class Card:
     enters_tapped: bool = False
     oracle_text: str = ""
     effects: tuple[Effect, ...] = ()
+    abilities: tuple[Ability, ...] = ()
+    """The same effects, still attached to the ability that owns them.
+
+    `effects` is the flattened view every existing caller uses; this is the one
+    that can answer "is that draw a spell or an enters-the-battlefield trigger?"
+    Both are carried because flattening is lossy and nothing should have to
+    re-parse a card to recover what the parser already knew."""
+    unparsed: tuple[str, ...] = ()
+    """Clauses the parser could not match to a verb.
+
+    Carried on the card rather than thrown away at parse time, because the
+    engine's own honesty check needs it: `fidelity` asked `resolve` which verbs
+    were unsupported, and `resolve` can only see the effects that *did* parse.
+    Text the parser never matched was therefore invisible to the one mechanism
+    whose job is to notice it, and 90 of 819 cards in the searchable pool were
+    called faithful while carrying clauses nobody had read."""
     power: str = ""
     toughness: str = ""
     """Printed as strings: Magic has `*`, `1+*` and `?`, none of which are ints."""
@@ -101,6 +150,12 @@ class Card:
     keywords: frozenset[str] = frozenset()
     colors: frozenset[str] = frozenset()
     color_identity: frozenset[str] = frozenset()
+    edhrec_rank: int | None = None
+    """Scryfall's EDHREC popularity rank — lower is more played. Crowd-distilled
+    card quality for exactly this format, and the measured answer to why the
+    first pipeline's decks sat below fair share: a synergy score knows which
+    cards connect, not which are any good. None for cards EDHREC has no data
+    on, which is itself a signal."""
     faces: tuple[Face, ...] = ()
     """Every printed side, in printed order. Always at least one once loaded from
     the store — a single-faced card gets a synthesised face 0 — so nothing reading
@@ -240,6 +295,8 @@ def card_from_scryfall(row: Mapping[str, object]) -> Card:
         enters_tapped=enters_tapped,
         oracle_text=text,
         effects=(),  # populated by the effect-verb layer; empty is honest for now
+        edhrec_rank=(int(row["edhrec_rank"])
+                     if row.get("edhrec_rank") is not None else None),
         power=str(row.get("power") or ""),
         toughness=str(row.get("toughness") or ""),
         loyalty=str(row.get("loyalty") or ""),

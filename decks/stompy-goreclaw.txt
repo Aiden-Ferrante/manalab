@@ -1,0 +1,78 @@
+// Goreclaw stompy — manalab pipeline, 2026-08-16
+//
+// RETRACTED 2026-08-17. The 5/12 originally recorded here was wrong twice
+// over: clock-capped games are DRAWS that the parser scored as wins, and the
+// 420s clock also starved the AI's thinking budget. Re-measured against the
+// same table with a 1800s clock and a corrected parser:
+//
+//     stompy 0/14 decided     tokens 3/15     counters 3/15     landfall 0/16
+//
+// This deck is the WORST of the four candidates, not the best. It is kept
+// because it is a legal, playable mono-green list and because the retraction
+// is part of its record — not because the search found anything good.
+
+1 Goreclaw, Terror of Qal Sisma  // Commander
+
+1 Ambush Commander
+1 Arcane Signet
+1 Beast Whisperer
+1 Beast Within
+1 Briar Hydra
+1 Chitterspitter
+1 Craterhoof Behemoth
+1 Crawling Infestation
+1 Cultivate
+1 Elvish Mystic
+1 End-Raze Forerunners
+1 Eternal Witness
+1 Farseek
+1 Flourishing Defenses
+1 Freestrider Lookout
+1 Garruk, Primal Hunter
+1 Ghalta, Primal Hunger
+1 Giant Inheritance
+1 Gnarlwood Dryad
+1 Grapple with the Past
+1 Greater Good
+1 Gruff Triplets
+1 Guardian Project
+1 Harmonize
+1 Haywire Mite
+1 Heroic Intervention
+1 Icetill Explorer
+1 Jubilation
+1 Kodama's Reach
+1 Krosan Grip
+1 Kura, the Boundless Sky
+1 Llanowar Elves
+1 Nature's Lore
+1 Nylea, Keen-Eyed
+1 One with the Kami
+1 Overrun
+1 Paradise Druid
+1 Peerless Recycling
+1 Pir's Whim
+1 Plaguemaw Beast
+1 Pollenbright Druid
+1 Pridemalkin
+1 Prishe's Wanderings
+1 Rampant Growth
+1 Reclamation Sage
+1 Regal Force
+1 Sakura-Tribe Elder
+1 Sol Ring
+1 Super Mutant Scavenger
+1 Terastodon
+1 Termagant Swarm
+1 Thunderfoot Baloth
+1 Titania, Nature's Force
+1 Topiary Stomper
+1 Trailtracker Scout
+1 Twitching Doll
+1 Unnatural Restoration
+1 Wild Pair
+1 Wood Elves
+1 World Shaper
+1 Yuna's Decision
+
+38 Forest

@@ -113,12 +113,24 @@ def test_a_counterspell_is_now_faithful() -> None:
 
 
 @pytest.mark.usefixtures("cards_db")
-def test_a_token_maker_is_still_refused() -> None:
+def test_a_token_maker_is_now_playable() -> None:
+    """Raise the Alarm stood in for "a verb we do not have" until `create_token`
+    existed. It makes two 1/1 Soldiers, which is a body this engine represents
+    completely, so it is a card now rather than an example."""
     from manalab.cards.store import CardStore
 
     report = fidelity.assess(CardStore().by_name("Raise the Alarm"))
-    assert not report.faithful
-    assert any("create_token" in r for r in report.reasons)
+    assert report.faithful, report.reasons
+
+
+def test_a_token_whose_body_is_not_the_whole_card_is_still_refused() -> None:
+    """Treasure, Food and Blood are artifacts whose point is an activated
+    ability there is nowhere to run — 455 uses between them."""
+    from manalab.cards.model import Effect
+
+    card = Card("t", "Treasure Maker", parse_cost("{1}{G}"), "Sorcery",
+                effects=(Effect("create_token", (("amount", 1), ("what", "Treasure"))),))
+    assert any("token not modelled" in r for r in fidelity.assess(card).reasons)
 
 
 def test_every_combat_keyword_is_actually_implemented() -> None:
@@ -265,10 +277,15 @@ def test_zero_toughness_creatures_never_reach_a_gauntlet_deck() -> None:
         assert "Doomed" not in {c.name for c in deck.cards}
 
 
-def test_legendary_cards_are_set_aside() -> None:
-    """No legend rule in the engine, so extra copies stack and search abuses it."""
+def test_legendary_cards_are_no_longer_set_aside() -> None:
+    """`sba` enforces 704.5j now, so a legend is a card like any other.
+
+    This test previously asserted the opposite. It was encoding a *workaround* —
+    legends were refused because the engine could not bin the second copy — and
+    the workaround is what made every commander unsearchable. The rule it was
+    standing in for is now implemented and tested in `test_engine_state.py`.
+    """
     legend = Card("l", "Legend", parse_cost("{2}{G}"), "Legendary Creature — Elk",
                   power="9", toughness="7")
     report = fidelity.assess(legend)
-    assert not report.faithful
-    assert any("legend" in r.lower() for r in report.reasons)
+    assert report.faithful, report.reasons

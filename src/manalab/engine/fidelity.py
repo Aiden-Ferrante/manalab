@@ -20,28 +20,18 @@ import re
 from dataclasses import dataclass
 
 import manalab.engine.resolve as resolve
+import manalab.engine.activation as activation
+import manalab.engine.statics as statics
+import manalab.engine.targets as targets_mod
+import manalab.engine.triggers as triggers
+from manalab.cards.effects import normalise as _normalise
+from manalab.cards.handcoded import NAMES as _HANDCODED_NAMES
 from manalab.cards.model import Card
 from manalab.engine.mana import MULTI_MANA
 
-COMBAT_KEYWORDS = frozenset(
-    {
-        "flying",
-        "reach",
-        "menace",
-        "trample",
-        "deathtouch",
-        "first strike",
-        "double strike",
-        "lifelink",
-        "vigilance",
-        "haste",
-        "defender",
-    }
-)
-"""Keywords `engine.combat` and `engine.objects` genuinely implement.
-
-Anything outside this set is printed on the card and ignored by the engine.
-"""
+from manalab.engine.objects import (  # noqa: F401 - re-exported
+    COMBAT_KEYWORDS, IMPLEMENTED_KEYWORDS)
+"""Re-exported: callers have imported it from here since before it moved."""
 
 _REMINDER = re.compile(r"\([^)]*\)")
 _MANA_ABILITY = re.compile(r"^\{t\}: add \{[wubrgc]\}\.?$", re.I)
@@ -63,14 +53,18 @@ class Fidelity:
         return self.faithful
 
 
-def _residual_text(card: Card) -> str:
+def _residual_text(card: Card, skip: frozenset[str] = frozenset()) -> str:
     """Oracle text with reminder text and bare keyword lines removed.
 
     What is left is text the engine would have to *do* something about. A
     vanilla creature and a creature that only says "Flying" both reduce to the
     empty string, because the engine handles the second one completely.
     """
-    text = _REMINDER.sub("", card.oracle_text or "")
+    # Normalised, exactly as the parser reads it: the handled-lines set holds
+    # ability text AFTER name substitution and clause canonicalisation, so
+    # comparing raw print against it re-refused every card whose text the
+    # normaliser touches — Craterhoof stayed "unexecuted" with a perfect parse.
+    text = _normalise(card.oracle_text or "", card.name)
     kept: list[str] = []
 
     for line in text.splitlines():
@@ -81,8 +75,10 @@ def _residual_text(card: Card) -> str:
             continue  # a basic "{T}: Add {G}." is exactly what mana.py does
         # A keyword line is a comma/semicolon-separated list of known keywords.
         parts = [p.strip().lower() for p in re.split(r"[;,]", line) if p.strip()]
-        if parts and all(p in COMBAT_KEYWORDS for p in parts):
+        if parts and all(p in IMPLEMENTED_KEYWORDS for p in parts):
             continue
+        if line.strip().lower() in skip:
+            continue        # a triggered ability the engine executes in full
         kept.append(line)
 
     return " ".join(kept).strip()
@@ -101,6 +97,12 @@ def assess(card: Card) -> Fidelity:
         # modal cards to the faithful pool as textless 0-drops.
         return Fidelity(card.name, ("multi-faced; the engine plays only one side",))
 
+    if card.name in _HANDCODED_NAMES:
+        # Implemented by name, verified by a test against the real store — the
+        # registry's contract. The standard text checks would re-refuse a card
+        # whose whole point is that no pattern will ever fit it.
+        return Fidelity(card.name, ())
+
     if card.is_land:
         # Lands are modelled as mana sources and nothing else.
         if _residual_text(card):
@@ -115,31 +117,110 @@ def assess(card: Card) -> Fidelity:
         # Asked of `resolve`, never re-derived here. A second list of implemented
         # verbs is a second thing to forget to update, and the failure mode is a
         # card admitted to the faithful pool that the engine cannot execute.
-        blocked = resolve.unsupported(card)
-        return Fidelity(card.name, blocked)
+        blocked = list(resolve.unsupported(card))
+        # `resolve` can only judge the verbs that parsed. Text the parser never
+        # matched produces no verb at all, so it was invisible here — the land
+        # and creature branches both ask `_residual_text` and this one asked
+        # nothing. That is how Pact of Negation entered the pool as a free,
+        # drawback-free counterspell: "pay {3}{U}{U}, or you lose the game" was
+        # dropped by the parser, so there was no verb for `resolve` to refuse.
+        if card.unparsed:
+            blocked.append("text the parser could not read")
+        return Fidelity(card.name, tuple(blocked))
 
-    if "Legendary" in card.type_line:
-        # The engine has no legend rule (see `sba`), so a second copy on the
-        # battlefield survives when the real game would bin it. That makes extra
-        # copies strictly better here and strictly worse in Magic — a search will
-        # happily play four of a legend it should play one of. Found exactly this
-        # way: a GA run came back with three copies of a legendary 9/7.
-        reasons.append("legendary; the engine has no legend rule, so copies stack")
+    # Legendary permanents used to be refused here, because without the legend
+    # rule a second copy survived and extra copies were strictly better in the
+    # engine and strictly worse in Magic. `sba` now enforces 704.5j, so they are
+    # admitted — which is what makes commanders expressible at all, since every
+    # commander is legendary.
 
-    if not card.is_creature:
+    if not card.is_creature and not _does_something(card):
+        # This used to fire for every non-creature permanent, which was true when
+        # the engine had neither static nor activated abilities: an artifact or
+        # enchantment really did just sit there. It now runs both, so an anthem
+        # is a card and only a permanent with nothing the engine can execute is
+        # inert. Vanilla creatures are still fine — a body is a contribution.
         reasons.append("non-creature permanent; sits on the battlefield inertly")
 
     if card.is_creature and card.base_power is None:
         reasons.append("characteristic-defining power/toughness (a '*')")
 
-    unknown = {k.lower() for k in card.keywords} - COMBAT_KEYWORDS
+    unknown = {k.lower() for k in card.keywords} - IMPLEMENTED_KEYWORDS
     if unknown:
         reasons.append("unimplemented keywords: " + ", ".join(sorted(unknown)))
 
-    if _residual_text(card):
+    # A trigger the engine can honour is no longer "text it does not execute".
+    # Anything it cannot recognise is still refused by name, which is what keeps
+    # a half-understood trigger out of a search pool.
+    reasons.extend(triggers.unsupported(card))
+    reasons.extend(statics.unsupported(card))
+    reasons.extend(activation.unsupported(card))
+
+    if _residual_text(card, skip=_handled_lines(card)):
         reasons.append("rules text the engine does not execute")
 
     return Fidelity(card.name, tuple(reasons))
+
+
+def _does_something(card: Card) -> bool:
+    """Whether this permanent has any ability the engine actually runs.
+
+    Statics, activated abilities and triggers all count. A permanent with none
+    of them contributes nothing but a body, which for a non-creature is nothing
+    at all.
+    """
+    return bool(statics.applicable(card)
+                or activation.activatable(card)
+                or triggers.watched_by(card))
+
+
+def _handled_lines(card: Card) -> frozenset[str]:
+    """Printed lines that are triggered abilities this engine fully executes.
+
+    "Fully" is strict on purpose. The ability must parse completely, every verb
+    must be one `resolve` implements, and none of its effects may need a target —
+    a triggered ability has no announcement step here yet, so there is nowhere for
+    a target to be chosen. Loosening any of those admits a card whose trigger
+    fires and quietly does the wrong thing, which is the failure this whole layer
+    exists to prevent.
+    """
+    handled: set[str] = set(statics.special_texts(card))
+    payable = {index for index, _, _ in activation.activatable(card)}
+    for index, ability in enumerate(card.abilities):
+        # An activated ability whose cost we can pay and whose every verb we can
+        # resolve is executed, not ignored — the same bar the other branches use.
+        if index in payable and ability.effects and not ability.unparsed \
+                and not resolve.unsupported_effects(ability.effects) \
+                and ability.text:
+            handled.add(ability.text.strip().lower())
+    for ability in card.abilities:
+        # A static ability whose whole effect `statics` applies is executed, not
+        # ignored — the same bar the triggered branch below uses.
+        if ability.kind == "static" and ability.effects and not ability.unparsed \
+                and statics.applicable(card) and not statics.unsupported(card) \
+                and ability.text:
+            handled.add(ability.text.strip().lower())
+    for _, ability in triggers.watched_by(card):
+        if ability.unparsed or not ability.effects:
+            continue
+        if resolve.unsupported_effects(ability.effects):
+            continue
+        # "No targets in a trigger" was written when every target was a
+        # choice needing an announcement step. A mass scope ("creatures you
+        # control") chooses nothing, and a graveyard return is engine-chosen —
+        # neither needs announcing, so neither disqualifies the trigger.
+        def _needs_announcing(e) -> bool:
+            raw = e.get("target")
+            if not raw or e.verb == "return_from_graveyard":
+                return False
+            spec = targets_mod.parse(raw)
+            return spec is None or spec.needs_target
+
+        if any(_needs_announcing(e) for e in ability.effects):
+            continue
+        if ability.text:
+            handled.add(ability.text.strip().lower())
+    return frozenset(handled)
 
 
 def faithful(card: Card) -> bool:

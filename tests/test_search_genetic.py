@@ -223,3 +223,25 @@ def test_workers_do_not_change_the_answer() -> None:
     assert serial.best.vector == parallel.best.vector
     assert [e.estimate.score for e in serial] == [e.estimate.score for e in parallel]
     assert serial.games_spent == parallel.games_spent
+
+
+def test_halving_spends_deepest_on_the_survivors():
+    """Successive halving: everyone gets the first rung, survivors get double.
+
+    The first Commander campaign measured why: at a flat 4 games per genome the
+    in-sample champion read 1.00 and held out at 0.38 — selection on noise, and
+    allocation, not search, was the binding constraint.
+    """
+    from manalab.search.oracle import Oracle
+
+    oracle = Oracle(problem(), budget=10_000, seed=3)
+    ga = GeneticSearch(population=8, games_per_eval=4, games_cap=16, elite=2)
+    ga.run(oracle)
+
+    by_deck: dict = {}
+    for entry in oracle.trace.evaluations:
+        key = tuple(entry.estimate.vector)
+        by_deck[key] = max(by_deck.get(key, 0), entry.estimate.games)
+    depths = sorted(by_deck.values())
+    assert depths[0] < depths[-1], "everyone got the same games — no halving"
+    assert depths[-1] >= 16, "no genome ever reached the deep rung"
