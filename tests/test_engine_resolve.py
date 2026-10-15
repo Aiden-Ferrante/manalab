@@ -25,7 +25,7 @@ from manalab.engine.zones import Zone
 
 
 @pytest.fixture(scope="module")
-def store() -> CardStore:
+def store(cards_db) -> CardStore:
     return CardStore()
 
 

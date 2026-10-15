@@ -97,6 +97,7 @@ def test_an_instant_with_no_parsed_effects_is_unfaithful() -> None:
     assert any("no parsed effects" in r for r in report.reasons)
 
 
+@pytest.mark.usefixtures("cards_db")
 def test_a_real_burn_spell_is_now_faithful() -> None:
     from manalab.cards.store import CardStore
 
@@ -104,12 +105,14 @@ def test_a_real_burn_spell_is_now_faithful() -> None:
     assert fidelity.assess(bolt).faithful, fidelity.assess(bolt).reasons
 
 
+@pytest.mark.usefixtures("cards_db")
 def test_a_counterspell_is_now_faithful() -> None:
     from manalab.cards.store import CardStore
 
     assert fidelity.assess(CardStore().by_name("Counterspell")).faithful
 
 
+@pytest.mark.usefixtures("cards_db")
 def test_a_token_maker_is_still_refused() -> None:
     from manalab.cards.store import CardStore
 
