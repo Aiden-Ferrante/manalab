@@ -598,7 +598,6 @@ def _ritual(mana: str = "{B}{B}{B}") -> Card:
 
 
 def test_a_ritual_puts_mana_in_the_pool() -> None:
-    from manalab.engine import mana
 
     state = GameState.new([[], []])
     spell = state.create(_ritual(), owner=0, zone=Zone.STACK)

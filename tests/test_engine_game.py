@@ -5,7 +5,6 @@ Synthetic cards throughout, so a failure points at the rules and not at Scryfall
 
 from __future__ import annotations
 
-import pytest
 
 from manalab.cards.mana import parse_cost
 from manalab.cards.model import Card

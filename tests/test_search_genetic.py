@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import random
 
-import pytest
 
 from manalab.cards.model import CandidatePool, Decklist
 from manalab.evaluate.result import EvalResult

@@ -15,13 +15,13 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass, field
-from typing import Iterable, Iterator, Sequence
+from typing import Sequence
 
 from manalab.cards.model import Card
 from manalab.engine.objects import GameObject
 from manalab.engine.player import Player
 from manalab.engine.triggers import Event, EventKind
-from manalab.engine.zones import ORDERED, PRIVATE, Zone, owner_of_zone
+from manalab.engine.zones import PRIVATE, Zone, owner_of_zone
 
 ZoneKey = tuple[Zone, int | None]
 

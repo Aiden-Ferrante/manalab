@@ -172,7 +172,7 @@ def test_the_agent_declines_to_point_removal_at_itself():
                                                       (("amount", 2),
                                                        ("target", "target creature"))),)),))
     state, _ = board(shooter)
-    friend = state.create(FOREST, owner=0, zone=Zone.BATTLEFIELD, quiet=True)
+    state.create(FOREST, owner=0, zone=Zone.BATTLEFIELD, quiet=True)
     options = A.legal(state, 0, Step.PRECOMBAT_MAIN, stack_empty=True)
     activations = [o for o in options if isinstance(o, A.ActivateAbility)]
 

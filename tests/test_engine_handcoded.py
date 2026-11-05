@@ -28,8 +28,8 @@ def test_seedborn_untaps_you_on_the_opponents_turn():
     s = store()
     state = GameState.new([[FOREST] * 40, [FOREST] * 40])
     game = Game(state, [PassingAgent(), PassingAgent()])
-    muse = state.create(s.by_name("Seedborn Muse"), owner=0,
-                        zone=Zone.BATTLEFIELD, quiet=True)
+    state.create(s.by_name("Seedborn Muse"), owner=0,
+                 zone=Zone.BATTLEFIELD, quiet=True)
     land = state.create(FOREST, owner=0, zone=Zone.BATTLEFIELD, quiet=True)
     land.tapped = True
 

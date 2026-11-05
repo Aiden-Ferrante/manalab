@@ -8,7 +8,7 @@ is what lets a Forge-backed evaluator drop in later without touching search.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Mapping
 
 from manalab.cards.model import CandidatePool, Decklist

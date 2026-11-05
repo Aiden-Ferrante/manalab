@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, field, replace
-from typing import Any, Iterator, Mapping, Sequence
+from dataclasses import dataclass, field
+from typing import Any, Iterator, Mapping
 
 
 @dataclass(frozen=True)

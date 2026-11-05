@@ -11,7 +11,7 @@ import pytest
 
 from manalab.cards.mana import parse_cost
 from manalab.cards.model import Card
-from manalab.engine import GameObject, GameState, Player, Zone
+from manalab.engine import GameState, Zone
 
 BEAR = Card("bear", "Grizzly Bears", parse_cost("{1}{G}"), "Creature — Bear",
             power="2", toughness="2")

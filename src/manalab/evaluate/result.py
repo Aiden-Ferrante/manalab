@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import statistics
 from dataclasses import dataclass, field
-from typing import Callable, Mapping, Protocol, Sequence, runtime_checkable
+from typing import Callable, Mapping, Protocol, runtime_checkable
 
 from manalab.cards.model import Decklist
 

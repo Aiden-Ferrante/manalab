@@ -8,7 +8,7 @@ are plain callables so a mulligan rule can itself become a search variable —
 from __future__ import annotations
 
 import random
-from typing import Callable, Protocol, Sequence
+from typing import Protocol, Sequence
 
 from manalab.cards.model import Card
 

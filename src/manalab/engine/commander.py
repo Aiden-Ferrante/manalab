@@ -27,7 +27,6 @@ from typing import TYPE_CHECKING
 
 from manalab.cards.mana import ManaCost
 from manalab.engine.objects import GameObject
-from manalab.engine.zones import Zone
 
 if TYPE_CHECKING:  # `state` imports this module for the 903.9 replacement
     from manalab.engine.state import GameState

@@ -28,7 +28,6 @@ from __future__ import annotations
 import re
 
 from manalab.cards.model import Card
-from manalab.engine.objects import COMBAT_KEYWORDS, GameObject
 from manalab.engine.state import GameState
 from manalab.engine.zones import Zone
 

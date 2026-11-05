@@ -10,6 +10,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "ruff>=0.6",
 ]
 analysis = [
     "numpy>=2.0",
@@ -33,3 +34,12 @@ packages = ["src/manalab"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "."]
+
+[tool.ruff]
+target-version = "py312"
+extend-exclude = ["notebooks"]
+
+[tool.ruff.lint]
+# Pyflakes only: real errors (undefined names, unused imports/variables).
+# Style rules are deliberately not enforced yet.
+select = ["F"]

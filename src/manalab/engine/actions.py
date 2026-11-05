@@ -69,7 +69,7 @@ class ActivateAbility(Action):
 
     object_id: int = 0
     index: int = 0
-    targets: tuple["T.Target", ...] = ()
+    targets: tuple[targets.Target, ...] = ()
 
     def describe(self, state: GameState) -> str:
         obj = state.objects.get(self.object_id)

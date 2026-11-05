@@ -20,10 +20,9 @@ import argparse
 import os
 import statistics
 import time
-from collections import Counter, defaultdict
+from collections import defaultdict
 from pathlib import Path
 
-from manalab.cards.model import Decklist
 from manalab.cards.store import CardStore
 from manalab.evaluate import gauntlet as G
 from manalab.evaluate import pool as P

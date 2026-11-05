@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import random
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Mapping, Sequence
 
 from manalab.cards.model import Card

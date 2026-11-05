@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from manalab.cards.mana import parse_cost
-from manalab.cards.model import CandidatePool, Card, Decklist
+from manalab.cards.model import CandidatePool, Card
 from manalab.evaluate.consistency import ConsistencyEvaluator
 from manalab.search import moves
 from manalab.search.baselines import FixedDeck, RandomSearch

@@ -21,7 +21,7 @@ Each is recorded on the cost so callers can filter decks that lean on them.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 COLORS = ("W", "U", "B", "R", "G")
 

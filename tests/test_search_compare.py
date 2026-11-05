@@ -10,7 +10,7 @@ import random
 
 import pytest
 
-from manalab.search.compare import Comparison, games_needed, paired, unpaired
+from manalab.search.compare import games_needed, paired, unpaired
 
 
 def correlated(n: int, rho: float, shift: float, seed: int) -> tuple[list[float], list[float]]:

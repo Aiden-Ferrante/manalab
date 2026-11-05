@@ -12,7 +12,6 @@ be cheap to clone.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Mapping
 
 from manalab.cards.model import Ability, Card
 

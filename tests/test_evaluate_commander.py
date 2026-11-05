@@ -5,7 +5,6 @@ from __future__ import annotations
 from manalab.cards.mana import parse_cost
 from manalab.cards.model import Card
 from manalab.engine import actions as A
-from manalab.engine import commander as C
 from manalab.engine.agents import PassingAgent
 from manalab.engine.game import Game
 from manalab.engine.state import GameState

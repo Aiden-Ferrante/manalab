@@ -29,10 +29,10 @@ is wrong would need a different pool representation, not a different constant.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass
 from typing import Mapping
 
-from manalab.cards.model import CandidatePool, Card, Decklist
+from manalab.cards.model import CandidatePool, Decklist
 
 BASIC_LANDS = frozenset({"Plains", "Island", "Swamp", "Mountain", "Forest",
                          "Wastes", "Snow-Covered Plains", "Snow-Covered Island",

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import comb
-from typing import Iterator, Mapping, Sequence
+from typing import Iterator
 
 from manalab.cards.mana import parse_cost
 from manalab.cards.model import CandidatePool, Card

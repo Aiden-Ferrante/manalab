@@ -55,7 +55,7 @@ def main() -> int:
         rng = random.Random(3)
         trio = (rng.choice(sorted(producers)), rng.choice(sorted(outlets)),
                 rng.choice(sorted(payoffs)))
-        print(f"\n  a minimal 3-ary hyperedge, drawn at random:")
+        print("\n  a minimal 3-ary hyperedge, drawn at random:")
         for role, name in zip(("produce", "outlet ", "payoff "), trio):
             print(f"    {role}  {name}")
         print("\n  no pair of these does anything; the triple closes the chain.")

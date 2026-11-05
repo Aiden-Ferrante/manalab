@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import sys
 from collections import Counter
-from pathlib import Path
 
 from manalab.cards import forge
 from manalab.cards.store import CardStore

@@ -16,7 +16,6 @@ Three stages, each on the engine suited to it:
 from __future__ import annotations
 
 import random
-import statistics
 import sys
 import time
 from dataclasses import replace as dc_replace

@@ -8,7 +8,7 @@ there is no opponent. That limitation is the honest version of v1.
 from __future__ import annotations
 
 import statistics
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Mapping, Sequence
 
 from manalab.cards.model import Card, Decklist
