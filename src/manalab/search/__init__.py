@@ -8,7 +8,7 @@ drop-in rather than a rewrite, and it is enforced by
 
 The deliverable of this package is not an optimizer. It is a ranked, defensible
 comparison of optimization techniques on the deckbuilding problem — see
-`docs/M2_PROMPT.md`. On a noisy objective every optimizer reports success; the
+`docs/m2-spec.md`. On a noisy objective every optimizer reports success; the
 benchmark is what says which one is right.
 
 Phase status:

@@ -404,7 +404,7 @@ Peer to the goldfish model, not its replacement (ADR 0003).
 
 ### Added — deckbuilding search (`manalab.search`) — now dormant
 
-Phases 0–2 of `docs/M2_PROMPT.md` landed and are green; work is parked in favour
+Phases 0–2 of `docs/m2-spec.md` landed and are green; work is parked in favour
 of the engine. It sits entirely above the evaluator seam and constrains nothing.
 
 - Reproducible harness: `Problem`, `Oracle`, `Trace`, `BudgetMeter`, DuckDB

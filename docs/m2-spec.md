@@ -1,8 +1,12 @@
-# GOAL PROMPT — manalab M2: Deckbuilding Search Benchmark
+# M2 specification: deckbuilding search benchmark
 
-## Context
+*Written 2026-08-11, when M2 opened. It is kept as the design record the search
+package was built against; the codebase has moved on since (see `CHANGELOG.md`
+and `docs/search-problem.md` for the current state).*
 
-You are working in `~/Desktop/code/manalab`, a Python 3.12 project (uv; the only
+## Context at the time of writing
+
+manalab is a Python 3.12 project (uv; the only
 runtime dependency is duckdb). It is a Magic: the Gathering **deckbuilding search
 engine that happens to contain a simulator** — the simulator is the disposable
 part, the search machinery is built to last.
@@ -22,7 +26,7 @@ defines the only boundary that matters.
   (`evaluate(deck, *, n_games, seed) -> EvalResult`), `EvalResult` (scalar
   `metrics`, per-game `samples`, `unmodeled`, `stderr`, `ci95`), and `Objective`
   (`EvalResult -> float`). One implementation: `ConsistencyEvaluator`.
-- `manalab.search` — **empty**. Only a docstring stating the contract. This is you.
+- `manalab.search` — **empty**. Only a docstring stating the contract. M2 fills it.
 - 45 tests pass. `examples/karsten_validation.py` reproduces Frank Karsten's
   colored-source tables (14 sources → 90.7% for a turn-1 single pip).
 
@@ -108,7 +112,7 @@ the optimizer comparisons invalidates them. Phase 4 fans out once 3 is stable.
 Phase 5 may run alongside 4 but must land before any claim about Magic. Phases
 6–8 are continuous.
 
-**Stop and check in at each phase gate.** Report what you measured, then wait.
+Each phase gate is a review point: report what was measured before starting the next phase.
 
 ### Phase 0 — Harness
 `Problem` (pool + evaluator + objective + start deck + budget), `Optimizer`

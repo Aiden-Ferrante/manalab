@@ -2,7 +2,7 @@
 
 *2026-08-11. The problem description M2's next phase optimizes against, and the
 mathematical frameworks that fit each part of its structure. Companion to
-`M2_PROMPT.md` (the harness) and ADRs 0002/0004 (the seam, honest modelling).*
+`m2-spec.md` (the harness) and ADRs 0002/0004 (the seam, honest modelling).*
 
 ---
 

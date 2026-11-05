@@ -13,7 +13,7 @@ difference between *compositions*, not between lucky draws.
 Honesty note printed with the result: consistency_t4 rewards having 4 mana by
 turn 4 and nothing else, so the search is expected to push lands high. Finding
 the objective's gameable edge is a correct result — the objective is the thing
-under test as much as the searcher (M2_PROMPT Phase 5).
+under test as much as the searcher (docs/m2-spec.md Phase 5).
 
     python -u examples/composition_search.py
 """

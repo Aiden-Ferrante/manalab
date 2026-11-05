@@ -113,6 +113,6 @@ SynergyEvaluator, or the term reads 0 and this collapses to THROUGHPUT.
 """Default working objective. Deliberately narrow and deliberately not "win rate".
 
 Known to be gameable on its own — see the degenerate-deck problem in Phase 5 of
-docs/M2_PROMPT.md. Fine for harness and allocator work, where what matters is
+docs/m2-spec.md. Fine for harness and allocator work, where what matters is
 that the objective is noisy and cheap, not that it is the right objective.
 """
