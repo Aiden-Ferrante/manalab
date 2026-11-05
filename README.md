@@ -1,8 +1,12 @@
 # manalab
 
+[![CI](https://github.com/Aiden-Ferrante/manalab/actions/workflows/ci.yml/badge.svg)](https://github.com/Aiden-Ferrante/manalab/actions/workflows/ci.yml)
+
 Deckbuilding search over Magic: the Gathering: a seeded, reproducible simulator behind a swappable evaluator seam, with search and statistics built to be checked.
 
-**Result:** errors found and retracted rather than shipped. A 2026-08-15 audit found 746 cards with the wrong mana value, 225 with summed costs and 46 mis-modelled enters-tapped lands, all of which had passed the 391-test green suite at `f366fd7`; three results have been publicly retracted.
+**What works.** The mana model reproduces Frank Karsten's independently derived colored-source tables end to end: 14 red sources cast a 1-drop on turn 1 0.907 of the time and 12 cast a 3-drop on turn 3 0.940 of the time (given 3 lands), at the source counts his tables recommend (`examples/karsten_validation.py`, output [below](#validation)). The suite is 574 tests on a fresh clone and 615 once the Scryfall card data is built. An audit pipeline checks the card database against Scryfall's own export field by field (`examples/verify_exact.py`) and ranks the card text the effect parser cannot read (`reports/audit_effects.md`).
+
+**What the audits caught, and what was retracted.** A 2026-08-15 audit found 746 cards with the wrong mana value, 225 with summed costs and 46 mis-modelled enters-tapped lands, all passing the 391-test suite at `f366fd7`. The root cause is still open and only partly fenced off (see Status, M0). Three published results were retracted in public rather than quietly fixed. That is the design goal: a project whose own mistakes surface, with the record kept.
 
 ## Quickstart
 
@@ -11,6 +15,7 @@ uv venv && uv pip install -e '.[dev]'
 .venv/bin/pytest -q                        # fresh clone: 574 passed, 41 skipped
 .venv/bin/manalab fetch && .venv/bin/manalab build   # ~25 MB from Scryfall -> data/cards.duckdb
 .venv/bin/pytest -q                        # with card data: 615 passed
+.venv/bin/ruff check .                     # lint (Pyflakes rules), also run in CI
 ```
 
 No card data is in this repo. Cards are downloaded at runtime from Scryfall's public bulk export (`manalab fetch`); the precon examples also pull official deck lists from MTGJSON into `data/precons/`. `data/` is gitignored and never redistributed. The 41 skipped tests are the ones that read real cards.
@@ -31,10 +36,16 @@ while the search machinery above it is built to last. See [ARCHITECTURE.md](ARCH
 
 Current focus: **the search ladder and the rules engine.**
 
-- **M0 — card data spine.** Done, and now *exhaustively verified*: every card,
-  face and field checked against Scryfall's own export (`examples/verify_exact.py`,
-  zero diffs), faces loaded so no card is silently textless, per-face type
-  classification queryable in SQL.
+- **M0 — card data spine.** Done for storage, *not* for derivation. The database
+  matches Scryfall's own export for every card, face and field
+  (`examples/verify_exact.py`, zero diffs). Faces are stored in a `faces` table
+  and attached to each `Card` by `CardStore`, so text, effect parsing and
+  per-face type classification see every side and no card is silently textless.
+  But `card_from_scryfall` (`src/manalab/cards/model.py:267`) still derives
+  mana cost, produced mana and enters-tapped from the top-level fields only and
+  never reads `card_faces`, so those values are wrong for faced cards. The
+  fidelity guard refuses every faced card from the search pool;
+  `manalab sim` on a decklist is not guarded.
 - **M1 — evaluator seam + goldfish sim.** Done. Mulligans, correct colored-mana
   payment, hand-aware land sequencing, consistency metrics; Karsten's published
   colored-source tables reproduced end to end.
